@@ -1,8 +1,5 @@
 #ifndef KEYWORD_MODEL_H
-#define KEY    // 模型參數 - 降低闾值以提高檢測靈敏度
-    static constexpr float SILENCE_THRESHOLD = 0.005f;   // 靜音闾值
-    static constexpr float ACTIVATION_THRESHOLD = 0.60f; // 降低激活闾值到60%
-    static constexpr float CONFIDENCE_THRESHOLD = 0.60f; // 60%以上信心度才檢測tatic constexpr float ACTIVATION_THRESHOLD = 0.80f; // 平衡的激活闾值D_MODEL_H
+#define KEYWORD_MODEL_H
 
 #include "audio_capture.h"
 #include <Arduino.h>
@@ -15,7 +12,9 @@ enum KeywordClass
     KEYWORD_YES = 2,     // "好的"/"是的"/"OK"
     KEYWORD_NO = 3,      // "不要"/"不是"/"停止"
     KEYWORD_HELLO = 4,   // "你好"/"嗨"/"Hello"
-    KEYWORD_COUNT = 5    // 總類別數
+    KEYWORD_ON = 5,      // "開"/"打開"/"On"
+    KEYWORD_OFF = 6,     // "關"/"關閉"/"Off"
+    KEYWORD_COUNT = 7    // 總類別數
 };
 
 // 關鍵字檢測結果
@@ -37,10 +36,10 @@ struct KeywordResult
 class KeywordDetector
 {
 private:
-    // 模型參數 - 極度保守的檢測閾值
+    // 模型參數 - 平衡的檢測閾值
     static constexpr float SILENCE_THRESHOLD = 0.005f;   // 靜音閾值
-    static constexpr float ACTIVATION_THRESHOLD = 0.95f; // 極高激活閾值
-    static constexpr float CONFIDENCE_THRESHOLD = 0.80f; // 80%以上信心度才檢測
+    static constexpr float ACTIVATION_THRESHOLD = 0.60f; // 激活閾值60%
+    static constexpr float CONFIDENCE_THRESHOLD = 0.60f; // 60%以上信心度才檢測
 
     // 特徵緩衝區
     float feature_buffer[SEQUENCE_LENGTH][FEATURE_SIZE];

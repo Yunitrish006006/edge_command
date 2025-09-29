@@ -1,12 +1,8 @@
 #ifndef AUDIO_CAPTURE_H
 #define AUDIO_CAPTURE_H
 
-#include "driver/i2s.h"// VAD 參數設定  
-#define VAD_ENERGY_THRESHOLD 0.015f   // 語音能量闾值（降低以提高靈敏度）
-#define VAD_START_FRAMES 2            // 連續2幀就開始（更快反應）
-#define VAD_END_FRAMES 15             // 連續15幀靜音才結束（避免語音中間停頓）
-#define VAD_MIN_SPEECH_DURATION 300   // 最小語音持續時間 (ms)
-#define VAD_MAX_SPEECH_DURATION 6000  // 最大語音持續時間 (ms)lude <Arduino.h>
+#include "driver/i2s.h"
+#include <Arduino.h>
 
 // I2S 引腳定義 (使用安全的 GPIO 引腳)
 #define I2S_WS_PIN 42  // WS (Word Select) 信號 - GPIO42

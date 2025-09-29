@@ -239,12 +239,14 @@ void audio_loop()
                                       keyword_result.confidence * 100.0f);
 
                         // 顯示所有類別的機率
-                        Serial.printf("📊 機率分佈 - 靜音:%.1f%%, 未知:%.1f%%, 是:%.1f%%, 否:%.1f%%, 你好:%.1f%%\n",
+                        Serial.printf("📊 機率分佈 - 靜音:%.1f%%, 未知:%.1f%%, 是:%.1f%%, 否:%.1f%%, 你好:%.1f%%, 開:%.1f%%, 關:%.1f%%\n",
                                       keyword_result.probabilities[0] * 100.0f, 
                                       keyword_result.probabilities[1] * 100.0f,
                                       keyword_result.probabilities[2] * 100.0f, 
                                       keyword_result.probabilities[3] * 100.0f,
-                                      keyword_result.probabilities[4] * 100.0f);
+                                      keyword_result.probabilities[4] * 100.0f,
+                                      keyword_result.probabilities[5] * 100.0f,
+                                      keyword_result.probabilities[6] * 100.0f);
 
                         // 顯示檢測到的特定關鍵字
                         switch (keyword_result.detected_keyword)
@@ -257,6 +259,12 @@ void audio_loop()
                             break;
                         case KEYWORD_HELLO:
                             Serial.println("👋 檢測到: 你好/Hello");
+                            break;
+                        case KEYWORD_ON:
+                            Serial.println("🟢 檢測到: 開/On - 系統啟動");
+                            break;
+                        case KEYWORD_OFF:
+                            Serial.println("🔴 檢測到: 關/Off - 系統關閉");
                             break;
                         }
                     }
