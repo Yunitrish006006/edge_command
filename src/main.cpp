@@ -4,10 +4,16 @@
 #include "hello_world_model_data.h"
 #include "audio_capture.h"
 #include "voice_model.h"
+#include "keyword_model.h"
 
 // 測試模式選擇
 bool audio_test_mode = true; // 設為 true 來測試 INMP441 麥克風
 bool voice_ai_mode = true;   // 設為 true 來啟用語音AI模型推理
+bool keyword_mode = true;    // 設為 true 來啟用關鍵字檢測
+
+// 外部宣告全域變數（在各自的 .cpp 檔案中定義）
+extern VoiceModel voice_model;
+extern KeywordDetector keyword_detector;
 
 // 函數宣告
 void audio_loop();
@@ -170,6 +176,34 @@ void audio_loop()
                 if (frame_count % 50 == 0)
                 {
                     voice_model.print_model_stats();
+                }
+
+                // ========= 關鍵字檢測 =========
+                if (keyword_mode)
+                {
+                    KeywordResult keyword_result = keyword_detector.detect(features);
+
+                    // 只在檢測到關鍵字時顯示結果
+                    if (keyword_result.detected_keyword != KEYWORD_SILENCE && keyword_result.detected_keyword != KEYWORD_UNKNOWN)
+                    {
+                        Serial.printf("🎯 關鍵字檢測: %s (信心度: %.1f%%)\n",
+                                      keyword_to_string(keyword_result.detected_keyword),
+                                      keyword_result.confidence * 100.0f);
+
+                        // 額外顯示檢測到的特定關鍵字
+                        switch (keyword_result.detected_keyword)
+                        {
+                        case KEYWORD_YES:
+                            Serial.println("✅ 檢測到: 是的/好的/Yes");
+                            break;
+                        case KEYWORD_NO:
+                            Serial.println("❌ 檢測到: 不要/不是/No");
+                            break;
+                        case KEYWORD_HELLO:
+                            Serial.println("👋 檢測到: 你好/Hello");
+                            break;
+                        }
+                    }
                 }
             }
             else
