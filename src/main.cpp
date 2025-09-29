@@ -5,7 +5,7 @@
 #include "audio_capture.h"
 
 // 音頻測試變數
-bool audio_test_mode = true; // 設為 true 來測試音頻捕獲
+bool audio_test_mode = true; // 設為 true 來測試 INMP441 麥克風
 
 // 函數宣告
 void audio_loop();
@@ -17,13 +17,20 @@ void setup()
     Serial.begin(115200);
 
     // 等待串口連接 (USB CDC 需要等待)
-    while (!Serial && millis() < 5000)
+    unsigned long start_time = millis();
+    while (!Serial && (millis() - start_time) < 5000)
     {
         delay(10);
     }
 
-    delay(1000);
-    Serial.println("");
+    // 額外延遲確保串口穩定
+    delay(2000);
+
+    // 發送多個測試訊息
+    Serial.println("\n\n==================================");
+    Serial.println("ESP32-S3 BOOT SUCCESSFUL!");
+    Serial.println("Serial Communication Test");
+    Serial.println("==================================");
 
     if (audio_test_mode)
     {
@@ -36,7 +43,7 @@ void setup()
             Serial.println("INMP441 initialized successfully!");
             Serial.println("Connect INMP441 as follows:");
             Serial.println("VCC -> 3.3V, GND -> GND");
-            Serial.println("SD -> GPIO4, WS -> GPIO5, SCK -> GPIO6");
+            Serial.println("SD -> GPIO2, WS -> GPIO42, SCK -> GPIO41");
             Serial.println("L/R -> GND (Left channel)");
         }
         else
@@ -47,8 +54,9 @@ void setup()
     }
     else
     {
-        Serial.println("=== Hello World TensorFlow Lite Example ===");
-        Serial.println("ESP32-S3 Starting...");
+        Serial.println("=== Basic Serial Communication Test ===");
+        Serial.println("ESP32-S3 Serial Port Working!");
+        Serial.println("Testing basic output before audio features...");
     }
 
     Serial.println("Serial communication established!");
@@ -73,6 +81,9 @@ void loop()
 void audio_loop()
 {
     static int sample_count = 0;
+    static unsigned long last_display = 0;
+    static int32_t max_amplitude_seen = 0;
+    static int frame_count = 0;
 
     // 讀取音頻數據
     size_t samples_read = audio_read(audio_buffer, BUFFER_SIZE);
@@ -84,48 +95,117 @@ void audio_loop()
 
         sample_count++;
 
-        // 每隔 100 次採樣顯示一次統計信息
-        if (sample_count % 100 == 0)
+        // 計算基本音頻統計信息
+        int32_t min_val = processed_audio[0];
+        int32_t max_val = processed_audio[0];
+        int64_t sum = 0;
+
+        for (size_t i = 0; i < samples_read; i++)
         {
-            // 計算音頻統計信息
-            int32_t min_val = processed_audio[0];
-            int32_t max_val = processed_audio[0];
-            int64_t sum = 0;
+            int16_t sample = processed_audio[i];
+            if (sample < min_val)
+                min_val = sample;
+            if (sample > max_val)
+                max_val = sample;
+            sum += abs(sample);
+        }
 
-            for (size_t i = 0; i < samples_read; i++)
+        int32_t avg_amplitude = sum / samples_read;
+        int32_t peak_amplitude = max(abs(min_val), abs(max_val));
+
+        // 記錄最大振幅
+        if (peak_amplitude > max_amplitude_seen)
+            max_amplitude_seen = peak_amplitude;
+
+        // ========= 新的音頻預處理測試 =========
+
+        // 檢查是否有完整的音頻幀準備好
+        if (audio_frame_ready(processed_audio, samples_read))
+        {
+            frame_count++;
+
+            // 獲取處理後的音頻幀
+            float current_frame[FRAME_SIZE];
+            audio_get_current_frame(current_frame);
+
+            // 提取音頻特徵
+            AudioFeatures features;
+            audio_extract_features(current_frame, &features);
+
+            // 顯示音頻特徵（每10幀顯示一次）
+            if (frame_count % 10 == 0)
             {
-                int16_t sample = processed_audio[i];
-                if (sample < min_val)
-                    min_val = sample;
-                if (sample > max_val)
-                    max_val = sample;
-                sum += abs(sample);
+                Serial.println("\n📊 === AUDIO FEATURES ===");
+                Serial.printf("Frame #%d: RMS=%.4f, ZCR=%.4f, SC=%.4f\n",
+                              frame_count, features.rms_energy,
+                              features.zero_crossing_rate, features.spectral_centroid);
+
+                if (features.is_voice_detected)
+                {
+                    Serial.println("🗣️  VOICE DETECTED!");
+                }
+                else
+                {
+                    Serial.println("🔇 Background/Noise");
+                }
+                Serial.println("========================\n");
             }
+        }
 
-            int32_t avg_amplitude = sum / samples_read;
+        // 即時聲音檢測 (保持原有的實時監控)
+        if (avg_amplitude > 15)
+        {
+            Serial.printf("🎤 LIVE: Amp=%d, Peak=%d ", avg_amplitude, peak_amplitude);
 
-            Serial.printf("Sample #%d: Read %d samples\n", sample_count, samples_read);
-            Serial.printf("  Range: [%d, %d], Avg Amplitude: %d\n", min_val, max_val, avg_amplitude);
-
-            // 簡單的音量檢測
-            if (avg_amplitude > 1000)
+            // 繪製簡單的音量條
+            int volume_bars = (avg_amplitude * 20) / 100;
+            Serial.print("[");
+            for (int i = 0; i < 20; i++)
             {
-                Serial.println("  🎤 SOUND DETECTED!");
+                if (i < volume_bars)
+                    Serial.print("█");
+                else
+                    Serial.print("·");
             }
-            else if (avg_amplitude > 100)
+            Serial.println("]");
+        }
+
+        // 每隔50次採樣顯示基本統計
+        if (sample_count % 50 == 0)
+        {
+            unsigned long now = millis();
+            float samples_per_second = (50.0 * 512.0) / ((now - last_display) / 1000.0);
+            last_display = now;
+
+            Serial.printf("Sample #%d: %d samples, %.1f Hz sampling rate\n",
+                          sample_count, samples_read, samples_per_second);
+            Serial.printf("  Range: [%d, %d], Avg: %d, Peak: %d, Max seen: %d\n",
+                          min_val, max_val, avg_amplitude, peak_amplitude, max_amplitude_seen);
+            Serial.printf("  Frames processed: %d\n", frame_count);
+
+            // 改進的聲音活動檢測
+            if (avg_amplitude > 50)
             {
-                Serial.println("  🔉 Low volume detected");
+                Serial.println("  🔊 ACTIVE SOUND!");
+            }
+            else if (avg_amplitude > 20)
+            {
+                Serial.println("  🔉 Some activity");
+            }
+            else if (avg_amplitude > 10)
+            {
+                Serial.println("  🔈 Very quiet activity");
             }
             else
             {
-                Serial.println("  🔇 Mostly quiet");
+                Serial.println("  🔇 Silent");
             }
             Serial.println("----------------------------------------");
         }
     }
     else
     {
-        Serial.println("No audio data received!");
+        Serial.println("⚠️  No audio data received!");
         delay(10);
     }
 }

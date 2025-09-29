@@ -1,11 +1,25 @@
 #include "audio_capture.h"
 #include "esp_log.h"
+#include <math.h>
+#include <string.h>
+
+// 數學常數
+#ifndef PI
+#define PI 3.14159265359f
+#endif
 
 static const char *TAG = "AudioCapture";
 
 // 全局變量
 int32_t audio_buffer[BUFFER_SIZE];
 int16_t processed_audio[BUFFER_SIZE];
+float normalized_audio[FRAME_SIZE];
+float feature_buffer[FRAME_SIZE];
+
+// 音頻處理狀態變量
+static int16_t frame_buffer[BUFFER_SIZE * 2]; // 幀緩衝區（支持重疊）
+static size_t frame_write_pos = 0;            // 寫入位置
+static bool frame_ready_flag = false;         // 幀就緒標誌
 
 /**
  * 初始化 I2S 介面用於 INMP441 麥克風
@@ -110,4 +124,160 @@ void audio_deinit()
 {
     i2s_driver_uninstall(I2S_PORT);
     Serial.println("I2S deinitialized");
+}
+
+// ======== 音頻預處理函數實作 ========
+
+/**
+ * 音頻正規化：將 16-bit 整數轉換為 [-1.0, 1.0] 浮點數
+ */
+void audio_normalize(int16_t *input, float *output, size_t length)
+{
+    for (size_t i = 0; i < length; i++)
+    {
+        // 轉換為 [-1.0, 1.0] 範圍
+        output[i] = (float)input[i] / MAX_AMPLITUDE * NORMALIZATION_FACTOR;
+
+        // 限制範圍
+        if (output[i] > 1.0f)
+            output[i] = 1.0f;
+        if (output[i] < -1.0f)
+            output[i] = -1.0f;
+    }
+}
+
+/**
+ * 應用漢寧窗函數來減少頻譜洩漏
+ */
+void audio_apply_window(float *data, size_t length)
+{
+    for (size_t i = 0; i < length; i++)
+    {
+        float window_val = 0.5f * (1.0f - cos(2.0f * PI * i / (length - 1)));
+        data[i] *= window_val;
+    }
+}
+
+/**
+ * 計算 RMS (Root Mean Square) 能量
+ */
+float audio_calculate_rms(float *data, size_t length)
+{
+    float sum = 0.0f;
+    for (size_t i = 0; i < length; i++)
+    {
+        sum += data[i] * data[i];
+    }
+    return sqrt(sum / length);
+}
+
+/**
+ * 計算零穿越率（Zero Crossing Rate）
+ * 用於區分語音和音樂/噪聲
+ */
+float audio_calculate_zero_crossing_rate(int16_t *data, size_t length)
+{
+    int zero_crossings = 0;
+    for (size_t i = 1; i < length; i++)
+    {
+        if ((data[i] >= 0) != (data[i - 1] >= 0))
+        {
+            zero_crossings++;
+        }
+    }
+    return (float)zero_crossings / (length - 1);
+}
+
+/**
+ * 檢查是否有新的音頻幀準備好進行處理
+ */
+bool audio_frame_ready(int16_t *new_samples, size_t sample_count)
+{
+    // 將新樣本添加到幀緩衝區
+    for (size_t i = 0; i < sample_count; i++)
+    {
+        frame_buffer[frame_write_pos] = new_samples[i];
+        frame_write_pos++;
+
+        // 檢查是否有完整的幀
+        if (frame_write_pos >= FRAME_SIZE)
+        {
+            frame_ready_flag = true;
+
+            // 移動數據以支持重疊處理
+            // 將後半部分移到前半部分
+            memmove(frame_buffer, frame_buffer + FRAME_SIZE - FRAME_OVERLAP,
+                    FRAME_OVERLAP * sizeof(int16_t));
+            frame_write_pos = FRAME_OVERLAP;
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * 獲取當前音頻幀（正規化並應用窗函數）
+ */
+void audio_get_current_frame(float *frame_output)
+{
+    if (!frame_ready_flag)
+        return;
+
+    // 從緩衝區複製一個完整幀
+    int16_t temp_frame[FRAME_SIZE];
+    memcpy(temp_frame, frame_buffer, FRAME_SIZE * sizeof(int16_t));
+
+    // 正規化
+    audio_normalize(temp_frame, frame_output, FRAME_SIZE);
+
+    // 應用窗函數
+    audio_apply_window(frame_output, FRAME_SIZE);
+
+    frame_ready_flag = false;
+}
+
+/**
+ * 提取音頻特徵
+ */
+void audio_extract_features(float *frame, AudioFeatures *features)
+{
+    // 計算 RMS 能量
+    features->rms_energy = audio_calculate_rms(frame, FRAME_SIZE);
+
+    // 為了計算零穿越率，我們需要將浮點數轉回整數
+    int16_t temp_samples[FRAME_SIZE];
+    for (size_t i = 0; i < FRAME_SIZE; i++)
+    {
+        temp_samples[i] = (int16_t)(frame[i] * MAX_AMPLITUDE);
+    }
+
+    // 計算零穿越率
+    features->zero_crossing_rate = audio_calculate_zero_crossing_rate(temp_samples, FRAME_SIZE);
+
+    // 簡化的頻譜重心計算（基於高頻內容）
+    float high_freq_energy = 0.0f;
+    float total_energy = 0.0f;
+
+    for (size_t i = 0; i < FRAME_SIZE; i++)
+    {
+        float energy = frame[i] * frame[i];
+        total_energy += energy;
+
+        // 簡單地將後半部分視為高頻
+        if (i > FRAME_SIZE / 2)
+        {
+            high_freq_energy += energy;
+        }
+    }
+
+    features->spectral_centroid = (total_energy > 0) ? (high_freq_energy / total_energy) : 0.0f;
+
+    // 語音檢測邏輯
+    // 語音通常有：適中的能量、適中的零穿越率、平衡的頻譜
+    features->is_voice_detected =
+        (features->rms_energy > 0.01f && features->rms_energy < 0.8f) &&
+        (features->zero_crossing_rate > 0.02f && features->zero_crossing_rate < 0.3f) &&
+        (features->spectral_centroid > 0.1f && features->spectral_centroid < 0.9f);
 }
