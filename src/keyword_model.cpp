@@ -279,55 +279,67 @@ float KeywordDetector::get_keyword_score(const float *features, KeywordClass key
     }
     else if (keyword == KEYWORD_YES)
     {
-        // "好的"：中等能量 + 穩定的頻譜
-        if (avg_energy >= 0.015f && avg_energy <= 0.7f)
-            score += 4.0f;
-        if (avg_zcr >= 0.08f && avg_zcr <= 0.35f)
-            score += 3.5f;
-        // "好"音的頻譜特徵匹配
+        // "好的"：更嚴格的匹配條件
+        if (avg_energy >= 0.02f && avg_energy <= 0.6f) // 縮小能量範圍
+            score += 5.0f;                             // 提高分數
+        if (avg_zcr >= 0.1f && avg_zcr <= 0.3f)        // 更精確的範圍
+            score += 4.5f;
+        // "好"音的頻譜特徵匹配（更嚴格）
         float yes_spectral_match = 1.0f - fabsf(avg_spectral - 0.42f);
-        score += yes_spectral_match * 3.0f;
+        if (yes_spectral_match > 0.7f) // 只有高匹配度才加分
+            score += yes_spectral_match * 4.0f;
         // 能量穩定性加分
-        if (energy_variance < 0.01f)
-            score += 1.5f;
+        if (energy_variance < 0.008f)
+            score += 2.5f;
+        // 額外要求：最大能量不能太低
+        if (max_energy < 0.05f)
+            score *= 0.3f; // 大幅降低分數
     }
     else if (keyword == KEYWORD_NO)
     {
-        // "不要"：較高能量 + 特定頻譜模式
-        if (avg_energy >= 0.02f && avg_energy <= 0.75f)
-            score += 4.0f;
-        if (avg_zcr >= 0.1f && avg_zcr <= 0.4f)
-            score += 3.5f;
-        // "不"音的頻譜特徵
+        // "不要"：更嚴格的匹配條件
+        if (avg_energy >= 0.025f && avg_energy <= 0.7f) // 縮小能量範圍
+            score += 5.0f;
+        if (avg_zcr >= 0.12f && avg_zcr <= 0.38f) // 更精確的範圍
+            score += 4.5f;
+        // "不"音的頻譜特徵（更嚴格）
         float no_spectral_match = 1.0f - fabsf(avg_spectral - 0.32f);
-        score += no_spectral_match * 3.0f;
-        // 強調音加分
-        if (max_energy > avg_energy * 1.3f)
-            score += 2.0f;
+        if (no_spectral_match > 0.7f) // 只有高匹配度才加分
+            score += no_spectral_match * 4.0f;
+        // 強調音加分（更嚴格）
+        if (max_energy > avg_energy * 1.5f)
+            score += 3.0f;
+        // 額外要求：最大能量不能太低
+        if (max_energy < 0.06f)
+            score *= 0.3f; // 大幅降低分數
     }
     else if (keyword == KEYWORD_HELLO)
     {
-        // "你好"：雙音節特徵 + 友好語調
-        if (avg_energy >= 0.025f && avg_energy <= 0.9f)
-            score += 4.0f;
-        if (avg_zcr >= 0.12f && avg_zcr <= 0.45f)
-            score += 3.5f;
-        // "你好"音的頻譜特徵
+        // "你好"：更嚴格的匹配條件
+        if (avg_energy >= 0.03f && avg_energy <= 0.8f) // 縮小能量範圍
+            score += 5.0f;
+        if (avg_zcr >= 0.15f && avg_zcr <= 0.42f) // 更精確的範圍
+            score += 4.5f;
+        // "你好"音的頻譜特徵（更嚴格）
         float hello_spectral_match = 1.0f - fabsf(avg_spectral - 0.52f);
-        score += hello_spectral_match * 3.0f;
-        // 雙音節能量變化模式
-        if (energy_variance > 0.002f && energy_variance < 0.02f)
-            score += 2.5f;
+        if (hello_spectral_match > 0.7f) // 只有高匹配度才加分
+            score += hello_spectral_match * 4.0f;
+        // 雙音節能量變化模式（更嚴格）
+        if (energy_variance > 0.003f && energy_variance < 0.015f)
+            score += 3.0f;
+        // 額外要求：最大能量不能太低
+        if (max_energy < 0.07f)
+            score *= 0.3f; // 大幅降低分數
     }
     else
     {
-        // 未知語音：廣泛匹配但較低分數
+        // 未知語音：提高基礎分數，讓它成為預設選擇
         if (avg_energy >= 0.008f && avg_energy <= 0.8f)
-            score += 2.0f;
+            score += 3.5f; // 提高未知類別基礎分數
         if (avg_zcr >= 0.02f && avg_zcr <= 0.45f)
-            score += 1.5f;
-        // 降低未知類別的基礎分數
-        score *= 0.7f;
+            score += 3.0f;
+        // 不再降低未知類別的分數，讓它成為預設選擇
+        // score *= 0.7f; // 移除這個懲罰
     }
 
     // 通用特徵匹配加分
