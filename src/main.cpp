@@ -3,9 +3,11 @@
 
 #include "hello_world_model_data.h"
 #include "audio_capture.h"
+#include "voice_model.h"
 
-// 音頻測試變數
+// 測試模式選擇
 bool audio_test_mode = true; // 設為 true 來測試 INMP441 麥克風
+bool voice_ai_mode = true;   // 設為 true 來啟用語音AI模型推理
 
 // 函數宣告
 void audio_loop();
@@ -34,8 +36,16 @@ void setup()
 
     if (audio_test_mode)
     {
-        Serial.println("=== INMP441 Audio Capture Test ===");
-        Serial.println("ESP32-S3 with INMP441 Microphone");
+        if (voice_ai_mode)
+        {
+            Serial.println("=== VOICE AI INFERENCE MODE ===");
+            Serial.println("ESP32-S3 + INMP441 + Voice Model");
+        }
+        else
+        {
+            Serial.println("=== INMP441 Audio Capture Test ===");
+            Serial.println("ESP32-S3 with INMP441 Microphone");
+        }
 
         // 初始化 I2S 音頻捕獲
         if (audio_init())
@@ -45,6 +55,12 @@ void setup()
             Serial.println("VCC -> 3.3V, GND -> GND");
             Serial.println("SD -> GPIO2, WS -> GPIO42, SCK -> GPIO41");
             Serial.println("L/R -> GND (Left channel)");
+
+            if (voice_ai_mode)
+            {
+                Serial.println("\n🤖 Voice AI Model Ready!");
+                Serial.println("Listening for: Speech, Music, Background, Silence");
+            }
         }
         else
         {
@@ -117,7 +133,7 @@ void audio_loop()
         if (peak_amplitude > max_amplitude_seen)
             max_amplitude_seen = peak_amplitude;
 
-        // ========= 新的音頻預處理測試 =========
+        // ========= 音頻預處理與AI推理 =========
 
         // 檢查是否有完整的音頻幀準備好
         if (audio_frame_ready(processed_audio, samples_read))
@@ -132,23 +148,52 @@ void audio_loop()
             AudioFeatures features;
             audio_extract_features(current_frame, &features);
 
-            // 顯示音頻特徵（每10幀顯示一次）
-            if (frame_count % 10 == 0)
+            if (voice_ai_mode)
             {
-                Serial.println("\n📊 === AUDIO FEATURES ===");
-                Serial.printf("Frame #%d: RMS=%.4f, ZCR=%.4f, SC=%.4f\n",
-                              frame_count, features.rms_energy,
-                              features.zero_crossing_rate, features.spectral_centroid);
+                // ========= 語音AI模型推理 =========
 
-                if (features.is_voice_detected)
+                VoiceModelResult ai_result = voice_model.inference(features);
+
+                // 每5幀顯示一次AI推理結果
+                if (frame_count % 5 == 0)
                 {
-                    Serial.println("🗣️  VOICE DETECTED!");
+                    Serial.printf("%s %s (%.1f%%) | Energy:%.3f, Spectral:%.3f, Temporal:%.3f\n",
+                                  get_voice_emoji(ai_result.classification),
+                                  voice_output_to_string(ai_result.classification),
+                                  ai_result.confidence * 100.0f,
+                                  ai_result.energy_score,
+                                  ai_result.spectral_score,
+                                  ai_result.temporal_score);
                 }
-                else
+
+                // 每50幀顯示詳細的AI統計
+                if (frame_count % 50 == 0)
                 {
-                    Serial.println("🔇 Background/Noise");
+                    voice_model.print_model_stats();
                 }
-                Serial.println("========================\n");
+            }
+            else
+            {
+                // ========= 原始音頻特徵顯示 =========
+
+                // 顯示音頻特徵（每10幀顯示一次）
+                if (frame_count % 10 == 0)
+                {
+                    Serial.println("\n📊 === AUDIO FEATURES ===");
+                    Serial.printf("Frame #%d: RMS=%.4f, ZCR=%.4f, SC=%.4f\n",
+                                  frame_count, features.rms_energy,
+                                  features.zero_crossing_rate, features.spectral_centroid);
+
+                    if (features.is_voice_detected)
+                    {
+                        Serial.println("🗣️  VOICE DETECTED!");
+                    }
+                    else
+                    {
+                        Serial.println("🔇 Background/Noise");
+                    }
+                    Serial.println("========================\n");
+                }
             }
         }
 
