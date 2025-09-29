@@ -173,7 +173,7 @@ void KeywordDetector::extract_mfcc_features(const float *audio_frame, float *mfc
     float zcr = 0.0f;
 
     // 計算能量和零穿越率
-    for (int i = 0; i < FRAME_SIZE; i++)
+    for (int i = 0; i < AUDIO_FRAME_SIZE; i++)
     {
         energy += audio_frame[i] * audio_frame[i];
         if (i > 0 && ((audio_frame[i] >= 0) != (audio_frame[i - 1] >= 0)))
@@ -182,8 +182,8 @@ void KeywordDetector::extract_mfcc_features(const float *audio_frame, float *mfc
         }
     }
 
-    energy = sqrtf(energy / FRAME_SIZE);
-    zcr /= (FRAME_SIZE - 1);
+    energy = sqrtf(energy / AUDIO_FRAME_SIZE);
+    zcr /= (AUDIO_FRAME_SIZE - 1);
 
     // 簡化的MFCC係數
     mfcc_features[0] = log10f(energy + 1e-10f);
@@ -193,11 +193,11 @@ void KeywordDetector::extract_mfcc_features(const float *audio_frame, float *mfc
     for (int i = 2; i < FEATURE_SIZE; i++)
     {
         float freq_component = 0.0f;
-        for (int j = 0; j < FRAME_SIZE; j++)
+        for (int j = 0; j < AUDIO_FRAME_SIZE; j++)
         {
-            freq_component += audio_frame[j] * cosf(2.0f * M_PI * i * j / FRAME_SIZE);
+            freq_component += audio_frame[j] * cosf(2.0f * M_PI * i * j / AUDIO_FRAME_SIZE);
         }
-        mfcc_features[i] = freq_component / FRAME_SIZE;
+        mfcc_features[i] = freq_component / AUDIO_FRAME_SIZE;
     }
 }
 

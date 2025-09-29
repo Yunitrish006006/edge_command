@@ -1,7 +1,7 @@
 #ifndef KEYWORD_MODEL_H
 #define KEYWORD_MODEL_H
 
-#include "audio_capture.h"
+#include "audio_module.h"
 #include <Arduino.h>
 
 // 關鍵字類別定義

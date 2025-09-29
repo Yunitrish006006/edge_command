@@ -1,7 +1,7 @@
 #ifndef VOICE_MODEL_H
 #define VOICE_MODEL_H
 
-#include "audio_capture.h"
+#include "audio_module.h"
 #include <Arduino.h>
 
 // 語音模型輸出類別
