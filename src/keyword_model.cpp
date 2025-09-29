@@ -7,44 +7,44 @@ KeywordDetector keyword_detector;
 
 // 關鍵字模式定義 (基於常見中英文關鍵字的音頻特徵)
 const KeywordPattern keyword_patterns[KEYWORD_COUNT] = {
-    // KEYWORD_SILENCE
+    // KEYWORD_SILENCE - 精細調整靜音檢測
     {
-        .energy_range = {0.0f, 0.01f},
-        .zcr_range = {0.0f, 0.5f},
+        .energy_range = {0.0f, 0.008f}, // 更嚴格的靜音能量閾值
+        .zcr_range = {0.0f, 0.3f},      // 降低零穿越率上限
         .duration_range = {0.0f, 10.0f},
         .spectral_peak_freq = 0.0f,
         .examples = {"silence", "background", "quiet"}},
 
-    // KEYWORD_UNKNOWN
+    // KEYWORD_UNKNOWN - 未知語音的廣泛範圍
     {
-        .energy_range = {0.01f, 1.0f},
-        .zcr_range = {0.05f, 0.5f},
-        .duration_range = {0.2f, 3.0f},
-        .spectral_peak_freq = 0.3f,
+        .energy_range = {0.008f, 0.8f}, // 調整能量範圍
+        .zcr_range = {0.02f, 0.45f},    // 縮窄零穿越率範圍
+        .duration_range = {0.15f, 3.5f},
+        .spectral_peak_freq = 0.35f,
         .examples = {"speech", "talking", "voice"}},
 
-    // KEYWORD_YES ("好的"/"是的"/"OK")
+    // KEYWORD_YES ("好的"/"是的"/"OK") - 優化為肯定詞彙
     {
-        .energy_range = {0.1f, 0.8f},
-        .zcr_range = {0.08f, 0.25f},
-        .duration_range = {0.3f, 1.2f},
-        .spectral_peak_freq = 0.4f,
+        .energy_range = {0.015f, 0.7f}, // 中等能量範圍
+        .zcr_range = {0.08f, 0.35f},    // 中等零穿越率（清晰發音）
+        .duration_range = {0.3f, 2.5f}, // 典型單詞長度
+        .spectral_peak_freq = 0.42f,    // "好"音的頻譜特徵
         .examples = {"好的", "是的", "OK"}},
 
-    // KEYWORD_NO ("不要"/"不是"/"停止")
+    // KEYWORD_NO ("不要"/"不是"/"停止") - 優化為否定詞彙
     {
-        .energy_range = {0.15f, 0.9f},
-        .zcr_range = {0.1f, 0.3f},
-        .duration_range = {0.4f, 1.5f},
-        .spectral_peak_freq = 0.3f,
+        .energy_range = {0.02f, 0.75f}, // 稍高能量（通常更強調）
+        .zcr_range = {0.1f, 0.4f},      // 較高零穿越率（"不"音特徵）
+        .duration_range = {0.25f, 2.8f},
+        .spectral_peak_freq = 0.32f, // "不"音的頻譜特徵
         .examples = {"不要", "不是", "停止"}},
 
-    // KEYWORD_HELLO ("你好"/"嗨"/"Hello")
+    // KEYWORD_HELLO ("你好"/"嗨"/"Hello") - 優化為問候語
     {
-        .energy_range = {0.2f, 0.9f},
-        .zcr_range = {0.12f, 0.35f},
-        .duration_range = {0.5f, 2.0f},
-        .spectral_peak_freq = 0.5f,
+        .energy_range = {0.025f, 0.9f}, // 較高能量（友好問候）
+        .zcr_range = {0.12f, 0.45f},    // 較高零穿越率（"你"音特徵）
+        .duration_range = {0.4f, 3.0f}, // 雙音節詞長度
+        .spectral_peak_freq = 0.52f,    // "你好"音的頻譜特徵
         .examples = {"你好", "嗨", "Hello"}}};
 
 KeywordDetector::KeywordDetector()
@@ -232,47 +232,117 @@ float KeywordDetector::get_keyword_score(const float *features, KeywordClass key
     const KeywordPattern &pattern = keyword_patterns[keyword];
     float score = 0.0f;
 
-    // 基於特徵的簡化評分
-    // 這裡使用前幾個特徵進行評分
-
-    float avg_energy = 0.0f;
-    float avg_zcr = 0.0f;
+    // 計算序列的統計特徵
+    float avg_energy = 0.0f, max_energy = 0.0f, energy_variance = 0.0f;
+    float avg_zcr = 0.0f, max_zcr = 0.0f;
     float avg_spectral = 0.0f;
 
-    // 計算序列的平均特徵
+    // 第一遍：計算平均值和最大值
     for (int i = 0; i < SEQUENCE_LENGTH; i++)
     {
-        avg_energy += features[i * FEATURE_SIZE + 0];
-        avg_zcr += features[i * FEATURE_SIZE + 1];
-        avg_spectral += features[i * FEATURE_SIZE + 2];
+        float energy = features[i * FEATURE_SIZE + 0];
+        float zcr = features[i * FEATURE_SIZE + 1];
+        float spectral = features[i * FEATURE_SIZE + 2];
+
+        avg_energy += energy;
+        avg_zcr += zcr;
+        avg_spectral += spectral;
+
+        if (energy > max_energy)
+            max_energy = energy;
+        if (zcr > max_zcr)
+            max_zcr = zcr;
     }
 
     avg_energy /= SEQUENCE_LENGTH;
     avg_zcr /= SEQUENCE_LENGTH;
     avg_spectral /= SEQUENCE_LENGTH;
 
-    // 檢查是否符合模式
+    // 第二遍：計算能量變異度
+    for (int i = 0; i < SEQUENCE_LENGTH; i++)
+    {
+        float energy_diff = features[i * FEATURE_SIZE + 0] - avg_energy;
+        energy_variance += energy_diff * energy_diff;
+    }
+    energy_variance /= SEQUENCE_LENGTH;
+
+    // === 關鍵字專用評分邏輯 ===
+    if (keyword == KEYWORD_SILENCE)
+    {
+        // 靜音：低能量 + 低變異度
+        if (avg_energy < SILENCE_THRESHOLD)
+            score += 8.0f;
+        if (max_energy < 0.015f)
+            score += 3.0f;
+        if (energy_variance < 0.001f)
+            score += 2.0f;
+    }
+    else if (keyword == KEYWORD_YES)
+    {
+        // "好的"：中等能量 + 穩定的頻譜
+        if (avg_energy >= 0.015f && avg_energy <= 0.7f)
+            score += 4.0f;
+        if (avg_zcr >= 0.08f && avg_zcr <= 0.35f)
+            score += 3.5f;
+        // "好"音的頻譜特徵匹配
+        float yes_spectral_match = 1.0f - fabsf(avg_spectral - 0.42f);
+        score += yes_spectral_match * 3.0f;
+        // 能量穩定性加分
+        if (energy_variance < 0.01f)
+            score += 1.5f;
+    }
+    else if (keyword == KEYWORD_NO)
+    {
+        // "不要"：較高能量 + 特定頻譜模式
+        if (avg_energy >= 0.02f && avg_energy <= 0.75f)
+            score += 4.0f;
+        if (avg_zcr >= 0.1f && avg_zcr <= 0.4f)
+            score += 3.5f;
+        // "不"音的頻譜特徵
+        float no_spectral_match = 1.0f - fabsf(avg_spectral - 0.32f);
+        score += no_spectral_match * 3.0f;
+        // 強調音加分
+        if (max_energy > avg_energy * 1.3f)
+            score += 2.0f;
+    }
+    else if (keyword == KEYWORD_HELLO)
+    {
+        // "你好"：雙音節特徵 + 友好語調
+        if (avg_energy >= 0.025f && avg_energy <= 0.9f)
+            score += 4.0f;
+        if (avg_zcr >= 0.12f && avg_zcr <= 0.45f)
+            score += 3.5f;
+        // "你好"音的頻譜特徵
+        float hello_spectral_match = 1.0f - fabsf(avg_spectral - 0.52f);
+        score += hello_spectral_match * 3.0f;
+        // 雙音節能量變化模式
+        if (energy_variance > 0.002f && energy_variance < 0.02f)
+            score += 2.5f;
+    }
+    else
+    {
+        // 未知語音：廣泛匹配但較低分數
+        if (avg_energy >= 0.008f && avg_energy <= 0.8f)
+            score += 2.0f;
+        if (avg_zcr >= 0.02f && avg_zcr <= 0.45f)
+            score += 1.5f;
+        // 降低未知類別的基礎分數
+        score *= 0.7f;
+    }
+
+    // 通用特徵匹配加分
     if (avg_energy >= pattern.energy_range[0] && avg_energy <= pattern.energy_range[1])
     {
-        score += 2.0f;
+        score += 1.0f; // 降低通用匹配的權重
     }
 
     if (avg_zcr >= pattern.zcr_range[0] && avg_zcr <= pattern.zcr_range[1])
     {
-        score += 2.0f;
+        score += 1.0f;
     }
 
-    // 頻譜相似度
-    float spectral_diff = fabsf(avg_spectral - pattern.spectral_peak_freq);
-    score += (1.0f - spectral_diff) * 2.0f;
-
-    // 特殊處理靜音
-    if (keyword == KEYWORD_SILENCE && avg_energy < SILENCE_THRESHOLD)
-    {
-        score += 5.0f;
-    }
-
-    return score;
+    // 確保分數為正值
+    return fmaxf(score, 0.0f);
 }
 
 void KeywordDetector::update_feature_buffer(const float *new_features)

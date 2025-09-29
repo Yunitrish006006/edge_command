@@ -106,14 +106,19 @@ void audio_process(int32_t *raw_data, int16_t *processed_data, size_t length)
     for (size_t i = 0; i < length; i++)
     {
         // INMP441 輸出 24-bit 數據，位於 32-bit 容器的高 24 位
-        // 右移 8 位來獲得 24-bit 值，然後再右移 8 位轉為 16-bit
-        int32_t sample = raw_data[i] >> 8; // 獲得 24-bit 有符號值
+        // 修正：直接右移 8 位來獲得 24-bit 值，然後再右移 8 位轉為 16-bit
+        // 但是要保持足夠的精度
+        int32_t sample = raw_data[i];
 
-        // 轉換為 16-bit（右移 8 位）
-        processed_data[i] = (int16_t)(sample >> 8);
+        // 第一步：獲得 24-bit 有符號值 (右移 8 位)
+        sample = sample >> 8;
 
-        // 可選：簡單的增益調整（如果音量太小）
-        // processed_data[i] = (int16_t)((sample >> 8) * 2); // 2倍增益
+        // 第二步：轉換為 16-bit，但要保持更多精度 (右移 4 位而不是 8 位)
+        // 這樣可以保持更多的音頻信號強度
+        processed_data[i] = (int16_t)(sample >> 4);
+
+        // 調試：增加增益以確保信號可見
+        processed_data[i] = (int16_t)(processed_data[i] * 4); // 4倍增益用於調試
     }
 }
 
@@ -274,10 +279,16 @@ void audio_extract_features(float *frame, AudioFeatures *features)
 
     features->spectral_centroid = (total_energy > 0) ? (high_freq_energy / total_energy) : 0.0f;
 
-    // 語音檢測邏輯
+    // 調試：確保特徵值不會太小被忽略
+    if (features->rms_energy < 0.001f && total_energy > 0.0f)
+    {
+        features->rms_energy = sqrtf(total_energy / FRAME_SIZE);
+    }
+
+    // 語音檢測邏輯 (放寬條件)
     // 語音通常有：適中的能量、適中的零穿越率、平衡的頻譜
     features->is_voice_detected =
-        (features->rms_energy > 0.01f && features->rms_energy < 0.8f) &&
-        (features->zero_crossing_rate > 0.02f && features->zero_crossing_rate < 0.3f) &&
-        (features->spectral_centroid > 0.1f && features->spectral_centroid < 0.9f);
+        (features->rms_energy > 0.001f && features->rms_energy < 0.8f) &&                // 降低最小能量閾值
+        (features->zero_crossing_rate > 0.01f && features->zero_crossing_rate < 0.5f) && // 放寬零穿越率範圍
+        (features->spectral_centroid > 0.05f && features->spectral_centroid < 0.95f);    // 放寬頻譜範圍
 }

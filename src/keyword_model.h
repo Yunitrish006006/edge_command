@@ -34,10 +34,10 @@ struct KeywordResult
 class KeywordDetector
 {
 private:
-    // 模型參數 - 簡化的線性分類器
-    static constexpr float SILENCE_THRESHOLD = 0.01f;
-    static constexpr float ACTIVATION_THRESHOLD = 0.7f;
-    static constexpr float CONFIDENCE_THRESHOLD = 0.6f;
+    // 模型參數 - 簡化的線性分類器 (降低閾值以便更容易檢測)
+    static constexpr float SILENCE_THRESHOLD = 0.005f;  // 降低靜音閾值
+    static constexpr float ACTIVATION_THRESHOLD = 0.4f; // 降低激活閾值
+    static constexpr float CONFIDENCE_THRESHOLD = 0.3f; // 降低信心度閾值
 
     // 特徵緩衝區
     float feature_buffer[SEQUENCE_LENGTH][FEATURE_SIZE];
