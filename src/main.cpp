@@ -133,7 +133,7 @@ void audio_loop()
         if (peak_amplitude > max_amplitude_seen)
             max_amplitude_seen = peak_amplitude;
 
-        // ========= 音頻預處理與AI推理 =========
+        // ========= 音頻預處理與語音活動檢測 =========
 
         // 檢查是否有完整的音頻幀準備好
         if (audio_frame_ready(processed_audio, samples_read))
@@ -148,52 +148,138 @@ void audio_loop()
             AudioFeatures features;
             audio_extract_features(current_frame, &features);
 
-            // ========= 關鍵字檢測 =========
-            if (keyword_mode)
+            // ========= 語音活動檢測 (VAD) =========
+            static VADState last_vad_state = VAD_SILENCE;
+            VADResult vad_result = audio_vad_process(&features);
+            
+            // 狀態改變時顯示
+            if (vad_result.state != last_vad_state)
             {
-                KeywordResult keyword_result = keyword_detector.detect(features);
-
-                // 只在檢測到關鍵字時顯示詳細信息
-                if (keyword_result.detected_keyword != KEYWORD_SILENCE && keyword_result.detected_keyword != KEYWORD_UNKNOWN)
+                switch (vad_result.state)
                 {
-                    Serial.printf("🔊 音頻特徵 - RMS: %.3f, ZCR: %.3f, SC: %.3f\n",
-                                  features.rms_energy, features.zero_crossing_rate, features.spectral_centroid);
+                case VAD_SPEECH_START:
+                    Serial.println("🎤 語音檢測開始...");
+                    break;
+                case VAD_SPEECH_ACTIVE:
+                    Serial.println("🗣️  正在收集語音數據...");
+                    break;
+                case VAD_SILENCE:
+                    if (last_vad_state != VAD_SILENCE)
+                        Serial.println("🔇 回到靜音狀態");
+                    break;
+                }
+                last_vad_state = vad_result.state;
+            }
+            
+            // 在語音進行中收集音頻數據
+            if (vad_result.state == VAD_SPEECH_ACTIVE)
+            {
+                audio_collect_speech_segment(current_frame, FRAME_SIZE);
+            }
 
-                    Serial.printf("🎯 關鍵字檢測: %s (信心度: %.1f%%)\n",
-                                  keyword_to_string(keyword_result.detected_keyword),
-                                  keyword_result.confidence * 100.0f);
-
-                    // 顯示所有類別的機率
-                    Serial.printf("📊 機率分佈 - 靜音:%.1f%%, 未知:%.1f%%, 是:%.1f%%, 否:%.1f%%, 你好:%.1f%%\n",
-                                  keyword_result.probabilities[0] * 100.0f, keyword_result.probabilities[1] * 100.0f,
-                                  keyword_result.probabilities[2] * 100.0f, keyword_result.probabilities[3] * 100.0f,
-                                  keyword_result.probabilities[4] * 100.0f);
-
-                    // 顯示檢測到的特定關鍵字
-                    switch (keyword_result.detected_keyword)
+            // ========= 完整語音段落的關鍵字檢測 =========
+            if (keyword_mode && vad_result.speech_complete)
+            {
+                Serial.println("🎯 開始分析完整語音段落...");
+                
+                // 對整個語音段落進行分析
+                if (speech_buffer_length > 0)
+                {
+                    // 計算正確的語音持續時間
+                    float duration_seconds = (float)speech_buffer_length / SAMPLE_RATE;
+                    
+                    // 將整個語音段落分段處理以提取更好的特徵
+                    AudioFeatures overall_features = {0};
+                    int num_segments = (speech_buffer_length / FRAME_SIZE) + 1;
+                    float total_rms = 0, total_zcr = 0, total_sc = 0;
+                    
+                    // 分段分析並累積特徵
+                    for (int seg = 0; seg < num_segments && seg * FRAME_SIZE < speech_buffer_length; seg++)
                     {
-                    case KEYWORD_YES:
-                        Serial.println("✅ 檢測到: 是的/好的/Yes");
-                        break;
-                    case KEYWORD_NO:
-                        Serial.println("❌ 檢測到: 不要/不是/No");
-                        break;
-                    case KEYWORD_HELLO:
-                        Serial.println("👋 檢測到: 你好/Hello");
-                        break;
+                        int start_pos = seg * FRAME_SIZE;
+                        int end_pos = min(start_pos + FRAME_SIZE, speech_buffer_length);
+                        int segment_size = end_pos - start_pos;
+                        
+                        if (segment_size >= FRAME_SIZE / 4) // 只處理有足夠長度的段落
+                        {
+                            AudioFeatures seg_features;
+                            audio_extract_features(&speech_buffer[start_pos], &seg_features);
+                            
+                            total_rms += seg_features.rms_energy;
+                            total_zcr += seg_features.zero_crossing_rate;
+                            total_sc += seg_features.spectral_centroid;
+                        }
                     }
+                    
+                    // 計算平均特徵
+                    int valid_segments = max(1, num_segments);
+                    overall_features.rms_energy = total_rms / valid_segments;
+                    overall_features.zero_crossing_rate = total_zcr / valid_segments;
+                    overall_features.spectral_centroid = total_sc / valid_segments;
+                    overall_features.is_voice_detected = true;
+
+                    // 進行關鍵字檢測
+                    KeywordResult keyword_result = keyword_detector.detect(overall_features);
+
+                    // 顯示完整的分析結果
+                    Serial.printf("📏 語音段落 - 長度: %d 樣本 (%.2f 秒)\n", 
+                                  speech_buffer_length, duration_seconds);
+                    
+                    Serial.printf("🔊 整體特徵 - RMS: %.3f, ZCR: %.3f, SC: %.3f\n",
+                                  overall_features.rms_energy, 
+                                  overall_features.zero_crossing_rate, 
+                                  overall_features.spectral_centroid);
+
+                    // 顯示關鍵字檢測結果
+                    if (keyword_result.detected_keyword != KEYWORD_SILENCE && 
+                        keyword_result.detected_keyword != KEYWORD_UNKNOWN)
+                    {
+                        Serial.printf("🎯 關鍵字檢測: %s (信心度: %.1f%%)\n",
+                                      keyword_to_string(keyword_result.detected_keyword),
+                                      keyword_result.confidence * 100.0f);
+
+                        // 顯示所有類別的機率
+                        Serial.printf("📊 機率分佈 - 靜音:%.1f%%, 未知:%.1f%%, 是:%.1f%%, 否:%.1f%%, 你好:%.1f%%\n",
+                                      keyword_result.probabilities[0] * 100.0f, 
+                                      keyword_result.probabilities[1] * 100.0f,
+                                      keyword_result.probabilities[2] * 100.0f, 
+                                      keyword_result.probabilities[3] * 100.0f,
+                                      keyword_result.probabilities[4] * 100.0f);
+
+                        // 顯示檢測到的特定關鍵字
+                        switch (keyword_result.detected_keyword)
+                        {
+                        case KEYWORD_YES:
+                            Serial.println("✅ 檢測到: 是的/好的/Yes");
+                            break;
+                        case KEYWORD_NO:
+                            Serial.println("❌ 檢測到: 不要/不是/No");
+                            break;
+                        case KEYWORD_HELLO:
+                            Serial.println("👋 檢測到: 你好/Hello");
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        Serial.println("❓ 未檢測到明確關鍵字");
+                    }
+                    
                     Serial.println("========================================");
                 }
+                
+                // 處理完成，重置緩衝區
+                audio_process_complete_speech();
             }
         }
 
-        // 簡化的音頻活動指示器（減少輸出頻率）
+        // 簡化的音頻活動指示器（較少頻率輸出）
         static unsigned long last_activity_time = 0;
         unsigned long current_time = millis();
 
-        if (avg_amplitude > 50 && (current_time - last_activity_time) > 1000)
+        if (avg_amplitude > 100 && (current_time - last_activity_time) > 2000)
         {
-            Serial.printf("🎤 檢測到聲音活動 (振幅: %d) - 正在分析...\n", avg_amplitude);
+            Serial.printf("�️  音頻活動 (振幅: %d) \n", avg_amplitude);
             last_activity_time = current_time;
         }
     }

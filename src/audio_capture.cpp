@@ -1,5 +1,6 @@
 #include "audio_capture.h"
 #include "esp_log.h"
+#include <Arduino.h>
 #include <math.h>
 #include <string.h>
 
@@ -291,4 +292,181 @@ void audio_extract_features(float *frame, AudioFeatures *features)
         (features->rms_energy > 0.001f && features->rms_energy < 0.8f) &&                // 降低最小能量閾值
         (features->zero_crossing_rate > 0.01f && features->zero_crossing_rate < 0.5f) && // 放寬零穿越率範圍
         (features->spectral_centroid > 0.05f && features->spectral_centroid < 0.95f);    // 放寬頻譜範圍
+}
+
+// ========== 語音活動檢測 (VAD) 系統 ==========
+
+// VAD 狀態變量
+static VADState vad_current_state = VAD_SILENCE;
+static int speech_frame_count = 0;      // 連續語音幀計數
+static int silence_frame_count = 0;     // 連續靜音幀計數
+static unsigned long speech_start_time = 0;
+static unsigned long speech_end_time = 0;
+
+// 語音緩衝系統
+float speech_buffer[SPEECH_BUFFER_SIZE];
+int speech_buffer_length = 0;
+
+/**
+ * 語音活動檢測主處理函數
+ */
+VADResult audio_vad_process(const AudioFeatures *features)
+{
+    VADResult result;
+    result.state = vad_current_state;
+    result.speech_detected = false;
+    result.speech_complete = false;
+    result.energy_level = features->rms_energy;
+    result.duration_ms = 0;
+
+    unsigned long current_time = millis();
+    bool is_speech_energy = (features->rms_energy > VAD_ENERGY_THRESHOLD);
+    
+    switch (vad_current_state)
+    {
+    case VAD_SILENCE:
+        if (is_speech_energy && features->is_voice_detected)
+        {
+            speech_frame_count++;
+            silence_frame_count = 0;
+            
+            if (speech_frame_count >= VAD_START_FRAMES)
+            {
+                // 語音開始
+                vad_current_state = VAD_SPEECH_START;
+                speech_start_time = current_time;
+                speech_buffer_length = 0;  // 清空語音緩衝
+                result.state = VAD_SPEECH_START;
+                result.speech_detected = true;
+                
+                Serial.println("🎤 語音開始檢測");
+            }
+        }
+        else
+        {
+            speech_frame_count = 0;
+        }
+        break;
+
+    case VAD_SPEECH_START:
+        vad_current_state = VAD_SPEECH_ACTIVE;
+        result.state = VAD_SPEECH_ACTIVE;
+        // 繼續到 SPEECH_ACTIVE 處理
+        
+    case VAD_SPEECH_ACTIVE:
+        if (is_speech_energy || features->is_voice_detected)
+        {
+            silence_frame_count = 0;
+            result.speech_detected = true;
+        }
+        else
+        {
+            silence_frame_count++;
+            
+            if (silence_frame_count >= VAD_END_FRAMES)
+            {
+                // 語音結束
+                speech_end_time = current_time;
+                unsigned long duration = speech_end_time - speech_start_time;
+                
+                if (duration >= VAD_MIN_SPEECH_DURATION)
+                {
+                    // 有效的語音段落
+                    vad_current_state = VAD_SPEECH_END;
+                    result.state = VAD_SPEECH_END;
+                    result.speech_complete = true;
+                    result.duration_ms = duration;
+                    
+                    Serial.printf("✅ 語音結束 - 持續時間: %lu ms\n", duration);
+                }
+                else
+                {
+                    // 太短，回到靜音狀態
+                    Serial.printf("⚠️  語音太短 (%lu ms)，忽略\n", duration);
+                    audio_vad_reset();
+                }
+            }
+        }
+        
+        // 超時保護
+        if ((current_time - speech_start_time) > VAD_MAX_SPEECH_DURATION)
+        {
+            Serial.println("⏰ 語音超時，強制結束");
+            vad_current_state = VAD_SPEECH_END;
+            result.state = VAD_SPEECH_END;
+            result.speech_complete = true;
+            result.duration_ms = current_time - speech_start_time;
+        }
+        break;
+
+    case VAD_SPEECH_END:
+        // 處理完整語音後重置到靜音狀態
+        audio_vad_reset();
+        result.state = VAD_SILENCE;
+        break;
+    }
+
+    return result;
+}
+
+/**
+ * 重置 VAD 狀態
+ */
+void audio_vad_reset()
+{
+    vad_current_state = VAD_SILENCE;
+    speech_frame_count = 0;
+    silence_frame_count = 0;
+    speech_start_time = 0;
+    speech_end_time = 0;
+}
+
+/**
+ * 收集語音段落到緩衝區（智能管理）
+ */
+bool audio_collect_speech_segment(const float *frame, size_t frame_size)
+{
+    // 檢查緩衝區是否有足夠空間
+    if (speech_buffer_length + frame_size > SPEECH_BUFFER_SIZE)
+    {
+        // 緩衝區滿時的策略：保留最後75%的數據，丟棄前面25%
+        int keep_samples = SPEECH_BUFFER_SIZE * 3 / 4;  // 保留75%
+        int discard_samples = SPEECH_BUFFER_SIZE - keep_samples;
+        
+        // 將後面的數據移到前面
+        memmove(speech_buffer, &speech_buffer[discard_samples], keep_samples * sizeof(float));
+        speech_buffer_length = keep_samples;
+        
+        // 靜默處理，減少警告頻率
+        static unsigned long last_warning = 0;
+        unsigned long now = millis();
+        if (now - last_warning > 2000) {
+            Serial.printf("🔄 緩衝區循環使用 - 保留最新 %.1f 秒語音\n", (float)keep_samples / SAMPLE_RATE);
+            last_warning = now;
+        }
+    }
+    
+    // 將音頻幀複製到語音緩衝區
+    memcpy(&speech_buffer[speech_buffer_length], frame, frame_size * sizeof(float));
+    speech_buffer_length += frame_size;
+    
+    return true;
+}
+
+/**
+ * 處理完整的語音段落
+ */
+void audio_process_complete_speech()
+{
+    if (speech_buffer_length == 0)
+    {
+        Serial.println("❌ 沒有語音數據可處理");
+        return;
+    }
+    
+    Serial.printf("🔄 處理完整語音段落 - 長度: %d 樣本\n", speech_buffer_length);
+    
+    // 這裡會在後面與關鍵字檢測整合
+    // 現在先重置緩衝區
+    speech_buffer_length = 0;
 }

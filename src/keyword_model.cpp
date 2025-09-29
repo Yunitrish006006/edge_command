@@ -195,6 +195,10 @@ KeywordClass KeywordDetector::classify_features(const float features[TOTAL_FEATU
         scores[i] = get_keyword_score(features, (KeywordClass)i);
     }
 
+    // 調試：顯示所有評分
+    Serial.printf("🔍 關鍵字評分 - 靜音:%.2f, 未知:%.2f, 是:%.2f, 否:%.2f, 你好:%.2f\n",
+                  scores[0], scores[1], scores[2], scores[3], scores[4]);
+
     // 找出最高評分的類別
     int best_class = 0;
     float best_score = scores[0];
@@ -216,6 +220,10 @@ KeywordClass KeywordDetector::classify_features(const float features[TOTAL_FEATU
     }
 
     *confidence = expf(best_score) / exp_sum;
+    
+    // 調試：顯示最佳結果
+    Serial.printf("🏆 最佳匹配: %s (評分:%.2f, 信心度:%.1f%%)\n", 
+                  keyword_to_string((KeywordClass)best_class), best_score, *confidence * 100.0f);
 
     // 如果置信度太低，歸類為UNKNOWN
     if (*confidence < CONFIDENCE_THRESHOLD && best_class != KEYWORD_SILENCE)
@@ -279,67 +287,147 @@ float KeywordDetector::get_keyword_score(const float *features, KeywordClass key
     }
     else if (keyword == KEYWORD_YES)
     {
-        // "好的"：更嚴格的匹配條件
-        if (avg_energy >= 0.02f && avg_energy <= 0.6f) // 縮小能量範圍
-            score += 5.0f;                             // 提高分數
-        if (avg_zcr >= 0.1f && avg_zcr <= 0.3f)        // 更精確的範圍
-            score += 4.5f;
-        // "好"音的頻譜特徵匹配（更嚴格）
+        // "好的"：平衡的檢測條件 - 能檢測到正常關鍵字且避免雜音
+
+        // 放寬的基本條件
+        bool energy_ok = (avg_energy >= 0.02f && avg_energy <= 0.7f); // 放寬能量範圍
+        bool zcr_ok = (avg_zcr >= 0.08f && avg_zcr <= 0.35f);         // 放寬 ZCR 範圍
+        bool max_energy_ok = (max_energy >= 0.04f);                   // 降低最小響亮度要求
+
+        // 頻譜特徵匹配（適度放寬）
         float yes_spectral_match = 1.0f - fabsf(avg_spectral - 0.42f);
-        if (yes_spectral_match > 0.7f) // 只有高匹配度才加分
-            score += yes_spectral_match * 4.0f;
-        // 能量穩定性加分
-        if (energy_variance < 0.008f)
-            score += 2.5f;
-        // 額外要求：最大能量不能太低
-        if (max_energy < 0.05f)
-            score *= 0.3f; // 大幅降低分數
+        bool spectral_ok = (yes_spectral_match > 0.6f); // 降低頻譜匹配要求
+
+        // 雜音排除（保持但放寬）
+        bool not_noise = (max_zcr < 0.6f);                         // 放寬雜音ZCR限制
+        bool energy_reasonable = (max_energy < avg_energy * 5.0f); // 放寬能量突兀限制
+
+        // 計分系統 - 部分滿足就可以給分
+        if (energy_ok)
+            score += 8.0f;
+        if (zcr_ok)
+            score += 6.0f;
+        if (max_energy_ok)
+            score += 4.0f;
+        if (spectral_ok)
+            score += yes_spectral_match * 8.0f;
+        if (not_noise)
+            score += 3.0f;
+        if (energy_reasonable)
+            score += 2.0f;
+
+        // 組合獎勵 - 多個條件符合時額外加分
+        int conditions_met = energy_ok + zcr_ok + max_energy_ok + spectral_ok + not_noise + energy_reasonable;
+        if (conditions_met >= 5)
+            score += 15.0f; // 5個以上條件符合
+        if (conditions_met == 6)
+            score += 10.0f; // 全部符合額外獎勵
+
+        // 品質獎勵
+        if (yes_spectral_match > 0.8f && energy_variance < 0.01f)
+            score += 8.0f;
     }
     else if (keyword == KEYWORD_NO)
     {
-        // "不要"：更嚴格的匹配條件
-        if (avg_energy >= 0.025f && avg_energy <= 0.7f) // 縮小能量範圍
-            score += 5.0f;
-        if (avg_zcr >= 0.12f && avg_zcr <= 0.38f) // 更精確的範圍
-            score += 4.5f;
-        // "不"音的頻譜特徵（更嚴格）
+        // "不要"：平衡的檢測條件
+
+        // 放寬的基本條件
+        bool energy_ok = (avg_energy >= 0.025f && avg_energy <= 0.8f);
+        bool zcr_ok = (avg_zcr >= 0.1f && avg_zcr <= 0.4f);
+        bool max_energy_ok = (max_energy >= 0.05f);
+        bool emphasis_ok = (max_energy > avg_energy * 1.2f); // 降低強調要求
+
+        // 頻譜特徵匹配（適度放寬）
         float no_spectral_match = 1.0f - fabsf(avg_spectral - 0.32f);
-        if (no_spectral_match > 0.7f) // 只有高匹配度才加分
-            score += no_spectral_match * 4.0f;
-        // 強調音加分（更嚴格）
-        if (max_energy > avg_energy * 1.5f)
+        bool spectral_ok = (no_spectral_match > 0.6f);
+
+        // 雜音排除（放寬）
+        bool not_noise = (max_zcr < 0.7f);
+        bool clear_speech = (avg_energy > 0.02f); // 降低最小音量要求
+
+        // 計分系統
+        if (energy_ok)
+            score += 8.0f;
+        if (zcr_ok)
+            score += 6.0f;
+        if (max_energy_ok)
+            score += 4.0f;
+        if (emphasis_ok)
+            score += 5.0f;
+        if (spectral_ok)
+            score += no_spectral_match * 8.0f;
+        if (not_noise)
             score += 3.0f;
-        // 額外要求：最大能量不能太低
-        if (max_energy < 0.06f)
-            score *= 0.3f; // 大幅降低分數
+        if (clear_speech)
+            score += 2.0f;
+
+        // 組合獎勵
+        int conditions_met = energy_ok + zcr_ok + max_energy_ok + emphasis_ok + spectral_ok + not_noise + clear_speech;
+        if (conditions_met >= 5)
+            score += 12.0f;
+        if (conditions_met >= 6)
+            score += 8.0f;
+
+        // 品質獎勵
+        if (no_spectral_match > 0.8f && emphasis_ok)
+            score += 10.0f;
     }
     else if (keyword == KEYWORD_HELLO)
     {
-        // "你好"：更嚴格的匹配條件
-        if (avg_energy >= 0.03f && avg_energy <= 0.8f) // 縮小能量範圍
-            score += 5.0f;
-        if (avg_zcr >= 0.15f && avg_zcr <= 0.42f) // 更精確的範圍
-            score += 4.5f;
-        // "你好"音的頻譜特徵（更嚴格）
+        // "你好"：平衡的檢測條件
+
+        // 放寬的基本條件
+        bool energy_ok = (avg_energy >= 0.03f && avg_energy <= 0.9f);
+        bool zcr_ok = (avg_zcr >= 0.12f && avg_zcr <= 0.45f);
+        bool max_energy_ok = (max_energy >= 0.06f);
+        bool variance_ok = (energy_variance > 0.002f && energy_variance < 0.02f); // 放寬雙音節變化
+
+        // 頻譜特徵匹配（適度放寬）
         float hello_spectral_match = 1.0f - fabsf(avg_spectral - 0.52f);
-        if (hello_spectral_match > 0.7f) // 只有高匹配度才加分
-            score += hello_spectral_match * 4.0f;
-        // 雙音節能量變化模式（更嚴格）
-        if (energy_variance > 0.003f && energy_variance < 0.015f)
+        bool spectral_ok = (hello_spectral_match > 0.6f);
+
+        // 雜音排除（放寬）
+        bool not_noise = (max_zcr < 0.8f);
+        bool proper_duration = (energy_variance > 0.001f);    // 降低音節變化要求
+        bool clear_speech = (max_energy > avg_energy * 1.1f); // 降低峰值要求
+
+        // 計分系統
+        if (energy_ok)
+            score += 8.0f;
+        if (zcr_ok)
+            score += 6.0f;
+        if (max_energy_ok)
+            score += 4.0f;
+        if (variance_ok)
+            score += 5.0f;
+        if (spectral_ok)
+            score += hello_spectral_match * 8.0f;
+        if (not_noise)
             score += 3.0f;
-        // 額外要求：最大能量不能太低
-        if (max_energy < 0.07f)
-            score *= 0.3f; // 大幅降低分數
+        if (proper_duration)
+            score += 2.0f;
+        if (clear_speech)
+            score += 2.0f;
+
+        // 組合獎勵
+        int conditions_met = energy_ok + zcr_ok + max_energy_ok + variance_ok + spectral_ok + not_noise + proper_duration + clear_speech;
+        if (conditions_met >= 6)
+            score += 12.0f;
+        if (conditions_met >= 7)
+            score += 8.0f;
+
+        // 品質獎勵
+        if (hello_spectral_match > 0.8f && variance_ok)
+            score += 10.0f;
     }
     else
     {
-        // 未知語音：提高基礎分數，讓它成為預設選擇
+        // 未知語音：低分數，讓特定關鍵字在高匹配時能達到95%
         if (avg_energy >= 0.008f && avg_energy <= 0.8f)
-            score += 3.5f; // 提高未知類別基礎分數
+            score += 1.0f; // 降低未知類別基礎分數
         if (avg_zcr >= 0.02f && avg_zcr <= 0.45f)
-            score += 3.0f;
-        // 不再降低未知類別的分數，讓它成為預設選擇
-        // score *= 0.7f; // 移除這個懲罰
+            score += 1.0f;
+        // 讓未知成為預設選擇，只有極高匹配才能超越
     }
 
     // 通用特徵匹配加分

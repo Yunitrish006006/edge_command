@@ -1,8 +1,12 @@
 #ifndef AUDIO_CAPTURE_H
 #define AUDIO_CAPTURE_H
 
-#include "driver/i2s.h"
-#include <Arduino.h>
+#include "driver/i2s.h"// VAD 參數設定  
+#define VAD_ENERGY_THRESHOLD 0.015f   // 語音能量闾值（降低以提高靈敏度）
+#define VAD_START_FRAMES 2            // 連續2幀就開始（更快反應）
+#define VAD_END_FRAMES 15             // 連續15幀靜音才結束（避免語音中間停頓）
+#define VAD_MIN_SPEECH_DURATION 300   // 最小語音持續時間 (ms)
+#define VAD_MAX_SPEECH_DURATION 6000  // 最大語音持續時間 (ms)lude <Arduino.h>
 
 // I2S 引腳定義 (使用安全的 GPIO 引腳)
 #define I2S_WS_PIN 42  // WS (Word Select) 信號 - GPIO42
@@ -54,7 +58,44 @@ struct AudioFeatures
     bool is_voice_detected;   // 語音檢測標誌
 };
 
+// 語音活動檢測 (VAD) 狀態
+enum VADState
+{
+    VAD_SILENCE,      // 靜音狀態
+    VAD_SPEECH_START, // 語音開始
+    VAD_SPEECH_ACTIVE,// 語音進行中
+    VAD_SPEECH_END    // 語音結束
+};
+
+// VAD 結果結構體
+struct VADResult
+{
+    VADState state;
+    bool speech_detected;
+    bool speech_complete;  // 完整語音段落結束
+    float energy_level;
+    unsigned long duration_ms;
+};
+
+// VAD 參數設定  
+#define VAD_ENERGY_THRESHOLD 0.015f   // 語音能量閾值（降低以提高靈敏度）
+#define VAD_START_FRAMES 2            // 連續2幀就開始（更快反應）
+#define VAD_END_FRAMES 15             // 連續15幀靜音才結束（避免語音中間停頓）
+#define VAD_MIN_SPEECH_DURATION 300   // 最小語音持續時間 (ms)
+#define VAD_MAX_SPEECH_DURATION 4000  // 最大語音持續時間 (ms)
+
+// 語音緩衝系統
+#define SPEECH_BUFFER_SIZE 16384  // 語音緩衝區大小 (樣本數) - 支持約1.0秒@16kHz
+extern float speech_buffer[SPEECH_BUFFER_SIZE];
+extern int speech_buffer_length;
+
 // 特徵提取函數
 void audio_extract_features(float *frame, AudioFeatures *features);
+
+// VAD 相關函數
+VADResult audio_vad_process(const AudioFeatures *features);
+void audio_vad_reset();
+bool audio_collect_speech_segment(const float *frame, size_t frame_size);
+void audio_process_complete_speech();
 
 #endif // AUDIO_CAPTURE_H
