@@ -4,6 +4,7 @@
 #include "driver/i2s.h"
 #include <Arduino.h>
 #include <functional>
+#include "debug_print.h"
 
 // INMP441 硬體配置常數
 #define INMP441_WS_PIN 42      // WS (Word Select) 信號 - GPIO42
@@ -76,12 +77,8 @@ private:
     unsigned long last_read_time;
     size_t consecutive_errors;
 
-    // 調試控制
-    bool debug_enabled;
-
-    // 調試輸出輔助方法
-    void debug_print(const char *message) const;
-    void debug_printf(const char *format, ...) const;
+    // 通用 Debug 模組
+    DebugPrint debug;
 
     // 內部方法
     bool install_i2s_driver();
@@ -141,8 +138,9 @@ public:
     bool self_test();
     void print_config() const;
     void print_statistics() const;
-    void set_debug(bool enable) { debug_enabled = enable; }
-    bool is_debug_enabled() const { return debug_enabled; }
+    void set_debug(bool enable) { debug.set_debug(enable); }
+    bool is_debug_enabled() const { return debug.is_debug_enabled(); }
+    DebugPrint& get_debug() { return debug; }
 
     // 靜態工廠方法
     static INMP441Config create_default_config();

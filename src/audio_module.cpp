@@ -4,7 +4,6 @@
 #include <math.h>
 #include <string.h>
 #include <functional>
-#include <stdarg.h>
 
 // 數學常數
 #ifndef PI
@@ -14,36 +13,12 @@
 static const char *TAG = "AudioModule";
 
 /**
- * 調試輸出輔助方法
- */
-void AudioCaptureModule::debug_print(const char *message) const
-{
-    if (debug_enabled && message)
-    {
-        Serial.println(message);
-    }
-}
-
-void AudioCaptureModule::debug_printf(const char *format, ...) const
-{
-    if (debug_enabled && format)
-    {
-        va_list args;
-        va_start(args, format);
-        char buffer[256];
-        vsnprintf(buffer, sizeof(buffer), format, args);
-        va_end(args);
-        Serial.print(buffer);
-    }
-}
-
-/**
  * 建構函數
  */
 AudioCaptureModule::AudioCaptureModule()
-    : processed_buffer(nullptr), normalized_buffer(nullptr), frame_buffer(nullptr), frame_write_pos(0), frame_ready_flag(false), vad_current_state(VAD_SILENCE), speech_frame_count(0), silence_frame_count(0), speech_start_time(0), speech_end_time(0), speech_buffer(nullptr), speech_buffer_length(0), is_initialized(false), is_running(false), debug_enabled(false)
+    : processed_buffer(nullptr), normalized_buffer(nullptr), frame_buffer(nullptr), frame_write_pos(0), frame_ready_flag(false), vad_current_state(VAD_SILENCE), speech_frame_count(0), silence_frame_count(0), speech_start_time(0), speech_end_time(0), speech_buffer(nullptr), speech_buffer_length(0), is_initialized(false), is_running(false), debug("AudioCapture", false)
 {
-    debug_print("AudioCaptureModule 建構函數");
+    debug.print("建構函數");
 }
 
 /**
@@ -52,7 +27,7 @@ AudioCaptureModule::AudioCaptureModule()
 AudioCaptureModule::~AudioCaptureModule()
 {
     deinitialize();
-    debug_print("AudioCaptureModule 解構函數");
+    debug.print("AudioCaptureModule 解構函數");
 }
 
 /**
@@ -60,11 +35,11 @@ AudioCaptureModule::~AudioCaptureModule()
  */
 bool AudioCaptureModule::initialize()
 {
-    debug_print("初始化音訊擷取模組...");
+    debug.print("初始化音訊擷取模組...");
 
     if (is_initialized)
     {
-        debug_print("模組已經初始化");
+        debug.print("模組已經初始化");
         return true;
     }
 
@@ -77,7 +52,7 @@ bool AudioCaptureModule::initialize()
     if (!processed_buffer || !normalized_buffer || 
         !frame_buffer || !speech_buffer)
     {
-        debug_print("記憶體分配失敗！");
+        debug.print("記憶體分配失敗！");
         deinitialize();
         return false;
     }
@@ -91,7 +66,7 @@ bool AudioCaptureModule::initialize()
     // 初始化 INMP441 模組
     if (!inmp441.initialize())
     {
-        debug_print("INMP441 模組初始化失敗！");
+        debug.print("INMP441 模組初始化失敗！");
         deinitialize();
         return false;
     }
@@ -109,7 +84,7 @@ bool AudioCaptureModule::initialize()
     reset_vad();
 
     is_initialized = true;
-    debug_print("音訊擷取模組初始化成功！");
+    debug.print("音訊擷取模組初始化成功！");
     return true;
 }
 
@@ -118,11 +93,11 @@ bool AudioCaptureModule::initialize()
  */
 bool AudioCaptureModule::initialize(const INMP441Config &inmp441_config)
 {
-    debug_print("初始化音訊擷取模組（自定義 INMP441 配置）...");
+    debug.print("初始化音訊擷取模組（自定義 INMP441 配置）...");
 
     if (is_initialized)
     {
-        debug_print("模組已經初始化");
+        debug.print("模組已經初始化");
         return true;
     }
 
@@ -135,7 +110,7 @@ bool AudioCaptureModule::initialize(const INMP441Config &inmp441_config)
     if (!processed_buffer || !normalized_buffer || 
         !frame_buffer || !speech_buffer)
     {
-        debug_print("記憶體分配失敗！");
+        debug.print("記憶體分配失敗！");
         deinitialize();
         return false;
     }
@@ -149,7 +124,7 @@ bool AudioCaptureModule::initialize(const INMP441Config &inmp441_config)
     // 使用自定義配置初始化 INMP441 模組
     if (!inmp441.initialize(inmp441_config))
     {
-        debug_print("INMP441 模組初始化失敗！");
+        debug.print("INMP441 模組初始化失敗！");
         deinitialize();
         return false;
     }
@@ -167,7 +142,7 @@ bool AudioCaptureModule::initialize(const INMP441Config &inmp441_config)
     reset_vad();
 
     is_initialized = true;
-    debug_print("音訊擷取模組初始化成功（自定義配置）！");
+    debug.print("音訊擷取模組初始化成功（自定義配置）！");
     return true;
 }
 
@@ -198,7 +173,7 @@ void AudioCaptureModule::deinitialize()
     frame_buffer = nullptr;
     speech_buffer = nullptr;
 
-    debug_print("音訊擷取模組去初始化完成");
+    debug.print("音訊擷取模組去初始化完成");
 }
 
 /**
@@ -208,24 +183,24 @@ bool AudioCaptureModule::start_capture()
 {
     if (!is_initialized)
     {
-        debug_print("模組尚未初始化，無法開始擷取");
+        debug.print("模組尚未初始化，無法開始擷取");
         return false;
     }
 
     if (is_running)
     {
-        debug_print("音訊擷取已在運行中");
+        debug.print("音訊擷取已在運行中");
         return true;
     }
 
     if (!inmp441.start())
     {
-        debug_print("INMP441 啟動失敗");
+        debug.print("INMP441 啟動失敗");
         return false;
     }
 
     is_running = true;
-    debug_print("音訊擷取已開始");
+    debug.print("音訊擷取已開始");
     return true;
 }
 
@@ -238,7 +213,7 @@ void AudioCaptureModule::stop_capture()
     {
         inmp441.stop();
         is_running = false;
-        debug_print("音訊擷取已停止");
+        debug.print("音訊擷取已停止");
     }
 }
 
@@ -420,7 +395,7 @@ VADResult AudioCaptureModule::process_vad(const AudioFeatures *features)
                 result.state = VAD_SPEECH_START;
                 result.speech_detected = true;
 
-                debug_print("🎤 語音開始檢測");
+                debug.print("🎤 語音開始檢測");
             }
         }
         else
@@ -456,11 +431,11 @@ VADResult AudioCaptureModule::process_vad(const AudioFeatures *features)
                     result.speech_complete = true;
                     result.duration_ms = duration;
 
-                    debug_printf("✅ 語音結束 - 持續時間: %lu ms\n", duration);
+                    debug.printf("✅ 語音結束 - 持續時間: %lu ms\n", duration);
                 }
                 else
                 {
-                    debug_printf("⚠️  語音太短 (%lu ms)，忽略\n", duration);
+                    debug.printf("⚠️  語音太短 (%lu ms)，忽略\n", duration);
                     reset_vad();
                 }
             }
@@ -469,7 +444,7 @@ VADResult AudioCaptureModule::process_vad(const AudioFeatures *features)
         // 超時保護
         if ((current_time - speech_start_time) > VAD_MAX_SPEECH_DURATION)
         {
-            debug_print("⏰ 語音超時，強制結束");
+            debug.print("⏰ 語音超時，強制結束");
             vad_current_state = VAD_SPEECH_END;
             result.state = VAD_SPEECH_END;
             result.speech_complete = true;
@@ -504,7 +479,7 @@ bool AudioCaptureModule::collect_speech_data(const float *frame, size_t frame_si
         unsigned long now = millis();
         if (now - last_warning > 2000)
         {
-            debug_printf("🔄 緩衝區循環使用 - 保留最新 %.1f 秒語音\n", (float)keep_samples / AUDIO_SAMPLE_RATE);
+            debug.printf("🔄 緩衝區循環使用 - 保留最新 %.1f 秒語音\n", (float)keep_samples / AUDIO_SAMPLE_RATE);
             last_warning = now;
         }
     }
@@ -522,7 +497,7 @@ void AudioCaptureModule::process_complete_speech_segment()
 {
     if (speech_buffer_length == 0) return;
 
-    debug_printf("🔄 處理完整語音段落 - 長度: %d 樣本\n", speech_buffer_length);
+    debug.printf("🔄 處理完整語音段落 - 長度: %d 樣本\n", speech_buffer_length);
 
     // 調用語音完成回調
     if (speech_complete_callback)
@@ -676,20 +651,20 @@ void AudioCaptureModule::on_inmp441_audio_data(const int16_t *audio_data, size_t
  */
 void AudioCaptureModule::on_inmp441_state_change(INMP441State state, const char *message)
 {
-    if (debug_enabled)
+    if (debug.is_debug_enabled())
     {
-        debug_printf("🔄 INMP441 狀態變更: %s", inmp441_state_to_string(state));
+        debug.printf("🔄 INMP441 狀態變更: %s", inmp441_state_to_string(state));
         if (message)
         {
-            debug_printf(" - %s", message);
+            debug.printf(" - %s", message);
         }
-        debug_print("");
+        debug.print("");
     }
 
     // 根據 INMP441 狀態調整模組狀態
     if (state == INMP441_ERROR)
     {
-        debug_print("⚠️  INMP441 發生錯誤，停止音訊擷取");
+        debug.print("⚠️  INMP441 發生錯誤，停止音訊擷取");
         is_running = false;
     }
 }
@@ -701,7 +676,7 @@ bool AudioCaptureModule::configure_inmp441(const INMP441Config &config)
 {
     if (is_running)
     {
-        debug_print("❌ 無法在運行中配置 INMP441");
+        debug.print("❌ 無法在運行中配置 INMP441");
         return false;
     }
 

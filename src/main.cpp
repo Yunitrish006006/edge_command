@@ -5,11 +5,15 @@
 #include "audio_module.h"
 #include "voice_model.h"
 #include "keyword_model.h"
+#include "debug_print.h"
 
 // 測試模式選擇
 bool audio_test_mode = true; // 設為 true 來測試 INMP441 麥克風
 bool voice_ai_mode = false;  // 關閉語音AI，只保留關鍵字檢測
 bool keyword_mode = true;    // 設為 true 來啟用關鍵字檢測
+
+// 全域 Debug 模組
+DebugPrint debug_main("Main", true); // 主程式 debug，預設啟用
 
 // 音訊擷取模組實例
 AudioCaptureModule audio_module;
@@ -43,15 +47,15 @@ void setup()
     delay(2000);
 
     // 發送多個測試訊息
-    Serial.println("\n\n==================================");
-    Serial.println("ESP32-S3 BOOT SUCCESSFUL!");
-    Serial.println("Serial Communication Test");
-    Serial.println("==================================");
+    debug_main.info("\n\n==================================");
+    debug_main.info("ESP32-S3 BOOT SUCCESSFUL!");
+    debug_main.info("Serial Communication Test");
+    debug_main.info("==================================");
 
     if (audio_test_mode)
     {
-        Serial.println("=== 關鍵字檢測模式 ===");
-        Serial.println("ESP32-S3 + INMP441 + 關鍵字辨識 (模組化版本)");
+        debug_main.info("=== 關鍵字檢測模式 ===");
+        debug_main.info("ESP32-S3 + INMP441 + 關鍵字辨識 (模組化版本)");
 
         // 可選: 自定義 INMP441 配置
         // INMP441Config custom_config = INMP441Module::create_custom_config(42, 41, 2, 16000);
@@ -59,8 +63,8 @@ void setup()
         // 初始化音訊模組
         if (audio_module.initialize())  // 或使用 audio_module.initialize(custom_config)
         {
-            Serial.println("音訊模組初始化成功!");
-            
+            debug_main.success("音訊模組初始化成功!");
+
             // 顯示 INMP441 配置信息
             audio_module.get_inmp441_module().print_config();
             
@@ -72,35 +76,35 @@ void setup()
             // 開始音訊擷取
             if (audio_module.start_capture())
             {
-                Serial.println("🎤 正在聆聽中... 請說出關鍵字:");
-                Serial.println("👋 \"你好\" | \"Hello\"");
-                Serial.println("✅ \"好的\" | \"Yes\"");
-                Serial.println("❌ \"不要\" | \"No\"");
-                Serial.println("🟢 \"開\" | \"On\"");
-                Serial.println("🔴 \"關\" | \"Off\"");
-                Serial.println("----------------------------------------");
+                debug_main.info("🎤 正在聆聽中... 請說出關鍵字:");
+                debug_main.info("👋 \"你好\" | \"Hello\"");
+                debug_main.info("✅ \"好的\" | \"Yes\"");
+                debug_main.info("❌ \"不要\" | \"No\"");
+                debug_main.info("🟢 \"開\" | \"On\"");
+                debug_main.info("🔴 \"關\" | \"Off\"");
+                debug_main.info("----------------------------------------");
             }
             else
             {
-                Serial.println("啟動音訊擷取失敗!");
+                debug_main.error("啟動音訊擷取失敗!");
                 audio_test_mode = false;
             }
         }
         else
         {
-            Serial.println("初始化音訊模組失敗!");
+            debug_main.error("初始化音訊模組失敗!");
             audio_test_mode = false;
         }
     }
     else
     {
-        Serial.println("=== Basic Serial Communication Test ===");
-        Serial.println("ESP32-S3 Serial Port Working!");
-        Serial.println("Testing basic output before audio features...");
+        debug_main.info("=== Basic Serial Communication Test ===");
+        debug_main.info("ESP32-S3 Serial Port Working!");
+        debug_main.info("Testing basic output before audio features...");
     }
 
-    Serial.println("Serial communication established!");
-    Serial.println("Starting main loop in 2 seconds...");
+    debug_main.success("Serial communication established!");
+    debug_main.info("Starting main loop in 2 seconds...");
     delay(2000);
 }
 
@@ -132,8 +136,8 @@ void audio_loop()
         AudioCaptureModule::AudioStats stats = audio_module.get_audio_stats();
         if (stats.avg_amplitude > 50)
         {
-            Serial.printf("📊 音訊統計 - 平均振幅: %d, 最大: %d, 最小: %d\n",
-                         stats.avg_amplitude, stats.max_amplitude, stats.min_amplitude);
+            debug_main.printf("📊 音訊統計 - 平均振幅: %d, 最大: %d, 最小: %d\n",
+                              stats.avg_amplitude, stats.max_amplitude, stats.min_amplitude);
         }
         last_stats_display = current_time;
     }
@@ -149,12 +153,12 @@ void original_tensorflow_loop()
     // 計算預期的 sin(x) 值作為對比
     float expected = sin(x);
 
-    Serial.printf("[%d] Input x = %.3f, Expected sin(x) = %.6f\n", counter, x, expected);
+    debug_main.printf("[%d] Input x = %.3f, Expected sin(x) = %.6f\n", counter, x, expected);
 
     // 每隔 10 次輸出一個分隔線
     if (counter % 10 == 0)
     {
-        Serial.println("----------------------------------------");
+        debug_main.print("----------------------------------------");
     }
 
     // 更新輸入
@@ -162,8 +166,8 @@ void original_tensorflow_loop()
     if (x > 2 * 3.14159f)
     {
         x = 0.0f;
-        Serial.println(">>> Cycle complete - Restarting from x=0 <<<");
-        Serial.println("");
+        debug_main.info(">>> Cycle complete - Restarting from x=0 <<<");
+        debug_main.print("");
     }
 
     delay(1000);
@@ -180,15 +184,15 @@ void on_audio_frame(const AudioFeatures &features)
     // 可以在這裡添加即時特徵監控
     static int frame_count = 0;
     frame_count++;
-    
+
     // 每100幀輸出一次特徵信息（避免過多輸出）
     if (frame_count % 100 == 0 && features.rms_energy > 0.01f)
     {
-        Serial.printf("🎵 幀特徵 - RMS:%.3f ZCR:%.3f SC:%.3f Voice:%s\n",
-                      features.rms_energy,
-                      features.zero_crossing_rate,
-                      features.spectral_centroid,
-                      features.is_voice_detected ? "是" : "否");
+        debug_main.printf("🎵 幀特徵 - RMS:%.3f ZCR:%.3f SC:%.3f Voice:%s\n",
+                          features.rms_energy,
+                          features.zero_crossing_rate,
+                          features.spectral_centroid,
+                          features.is_voice_detected ? "是" : "否");
     }
 }
 
@@ -206,20 +210,20 @@ void on_vad_event(const VADResult &result)
         switch (result.state)
         {
         case VAD_SPEECH_START:
-            Serial.println("🎤 語音檢測開始...");
+            debug_main.info("🎤 語音檢測開始...");
             break;
             
         case VAD_SPEECH_ACTIVE:
-            Serial.println("🗣️  正在收集語音數據...");
+            debug_main.info("🗣️  正在收集語音數據...");
             break;
             
         case VAD_SPEECH_END:
-            Serial.printf("⏹️  語音檢測結束 - 持續時間: %lu ms\n", result.duration_ms);
+            debug_main.printf("⏹️  語音檢測結束 - 持續時間: %lu ms\n", result.duration_ms);
             break;
             
         case VAD_SILENCE:
             if (last_state != VAD_SILENCE)
-                Serial.println("🔇 回到靜音狀態");
+                debug_main.info("🔇 回到靜音狀態");
             break;
         }
         last_state = result.state;
@@ -236,9 +240,9 @@ void on_speech_complete(const float *speech_data, size_t length, unsigned long d
     {
         return;
     }
-    
-    Serial.println("🎯 開始分析完整語音段落...");
-    
+
+    debug_main.info("🎯 開始分析完整語音段落...");
+
     // 計算語音持續時間
     float duration_seconds = (float)length / AUDIO_SAMPLE_RATE;
     
@@ -310,56 +314,56 @@ void on_speech_complete(const float *speech_data, size_t length, unsigned long d
         KeywordResult keyword_result = keyword_detector.detect(overall_features);
         
         // 顯示完整的分析結果
-        Serial.printf("📏 語音段落 - 長度: %zu 樣本 (%.2f 秒)\n", length, duration_seconds);
-        
-        Serial.printf("🔊 整體特徵 - RMS: %.3f, ZCR: %.3f, SC: %.3f\n",
-                      overall_features.rms_energy,
-                      overall_features.zero_crossing_rate,
-                      overall_features.spectral_centroid);
-        
+        debug_main.printf("📏 語音段落 - 長度: %zu 樣本 (%.2f 秒)\n", length, duration_seconds);
+
+        debug_main.printf("🔊 整體特徵 - RMS: %.3f, ZCR: %.3f, SC: %.3f\n",
+                          overall_features.rms_energy,
+                          overall_features.zero_crossing_rate,
+                          overall_features.spectral_centroid);
+
         // 顯示關鍵字檢測結果
         if (keyword_result.detected_keyword != KEYWORD_SILENCE &&
             keyword_result.detected_keyword != KEYWORD_UNKNOWN)
         {
-            Serial.printf("🎯 關鍵字檢測: %s (信心度: %.1f%%)\n",
-                          keyword_to_string(keyword_result.detected_keyword),
-                          keyword_result.confidence * 100.0f);
-            
+            debug_main.printf("🎯 關鍵字檢測: %s (信心度: %.1f%%)\n",
+                              keyword_to_string(keyword_result.detected_keyword),
+                              keyword_result.confidence * 100.0f);
+
             // 顯示所有類別的機率
-            Serial.printf("📊 機率分佈 - 靜音:%.1f%%, 未知:%.1f%%, 是:%.1f%%, 否:%.1f%%, 你好:%.1f%%, 開:%.1f%%, 關:%.1f%%\n",
-                          keyword_result.probabilities[0] * 100.0f,
-                          keyword_result.probabilities[1] * 100.0f,
-                          keyword_result.probabilities[2] * 100.0f,
-                          keyword_result.probabilities[3] * 100.0f,
-                          keyword_result.probabilities[4] * 100.0f,
-                          keyword_result.probabilities[5] * 100.0f,
-                          keyword_result.probabilities[6] * 100.0f);
-            
+            debug_main.printf("📊 機率分佈 - 靜音:%.1f%%, 未知:%.1f%%, 是:%.1f%%, 否:%.1f%%, 你好:%.1f%%, 開:%.1f%%, 關:%.1f%%\n",
+                              keyword_result.probabilities[0] * 100.0f,
+                              keyword_result.probabilities[1] * 100.0f,
+                              keyword_result.probabilities[2] * 100.0f,
+                              keyword_result.probabilities[3] * 100.0f,
+                              keyword_result.probabilities[4] * 100.0f,
+                              keyword_result.probabilities[5] * 100.0f,
+                              keyword_result.probabilities[6] * 100.0f);
+
             // 顯示檢測到的特定關鍵字
             switch (keyword_result.detected_keyword)
             {
             case KEYWORD_YES:
-                Serial.println("✅ 檢測到: 是的/好的/Yes");
+                debug_main.success("✅ 檢測到: 是的/好的/Yes");
                 break;
             case KEYWORD_NO:
-                Serial.println("❌ 檢測到: 不要/不是/No");
+                debug_main.info("❌ 檢測到: 不要/不是/No");
                 break;
             case KEYWORD_HELLO:
-                Serial.println("👋 檢測到: 你好/Hello");
+                debug_main.info("👋 檢測到: 你好/Hello");
                 break;
             case KEYWORD_ON:
-                Serial.println("🟢 檢測到: 開/On - 系統啟動");
+                debug_main.success("🟢 檢測到: 開/On - 系統啟動");
                 break;
             case KEYWORD_OFF:
-                Serial.println("🔴 檢測到: 關/Off - 系統關閉");
+                debug_main.warning("🔴 檢測到: 關/Off - 系統關閉");
                 break;
             }
         }
         else
         {
-            Serial.println("❓ 未檢測到明確關鍵字");
+            debug_main.info("❓ 未檢測到明確關鍵字");
         }
-        
-        Serial.println("========================================");
+
+        debug_main.info("========================================");
     }
 }

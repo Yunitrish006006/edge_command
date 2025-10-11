@@ -2,54 +2,26 @@
 #include "esp_log.h"
 #include <Arduino.h>
 #include <string.h>
-#include <stdarg.h>
 
 static const char *TAG = "INMP441Module";
-
-/**
- * 調試輸出輔助方法 - 打印字符串
- */
-void INMP441Module::debug_print(const char *message) const
-{
-    if (debug_enabled && message)
-    {
-        Serial.println(message);
-    }
-}
-
-/**
- * 調試輸出輔助方法 - 格式化打印
- */
-void INMP441Module::debug_printf(const char *format, ...) const
-{
-    if (debug_enabled && format)
-    {
-        va_list args;
-        va_start(args, format);
-        char buffer[256];
-        vsnprintf(buffer, sizeof(buffer), format, args);
-        va_end(args);
-        Serial.print(buffer);
-    }
-}
 
 /**
  * 預設建構函數
  */
 INMP441Module::INMP441Module()
-    : raw_buffer(nullptr), processed_buffer(nullptr), current_state(INMP441_UNINITIALIZED), i2s_installed(false), total_samples_read(0), last_read_time(0), consecutive_errors(0), debug_enabled(false)
+    : raw_buffer(nullptr), processed_buffer(nullptr), current_state(INMP441_UNINITIALIZED), i2s_installed(false), total_samples_read(0), last_read_time(0), consecutive_errors(0), debug("INMP441", false)
 {
     config = create_default_config();
-    debug_print("INMP441Module 建構函數 - 使用預設配置");
+    debug.print("建構函數 - 使用預設配置");
 }
 
 /**
  * 自定義配置建構函數
  */
 INMP441Module::INMP441Module(const INMP441Config &custom_config)
-    : raw_buffer(nullptr), processed_buffer(nullptr), current_state(INMP441_UNINITIALIZED), i2s_installed(false), total_samples_read(0), last_read_time(0), consecutive_errors(0), debug_enabled(false), config(custom_config)
+    : raw_buffer(nullptr), processed_buffer(nullptr), current_state(INMP441_UNINITIALIZED), i2s_installed(false), total_samples_read(0), last_read_time(0), consecutive_errors(0), debug("INMP441", false), config(custom_config)
 {
-    debug_print("INMP441Module 建構函數 - 使用自定義配置");
+    debug.print("建構函數 - 使用自定義配置");
 }
 
 /**
@@ -58,7 +30,7 @@ INMP441Module::INMP441Module(const INMP441Config &custom_config)
 INMP441Module::~INMP441Module()
 {
     deinitialize();
-    debug_print("INMP441Module 解構函數完成");
+    debug.print("INMP441Module 解構函數完成");
 }
 
 /**
@@ -66,11 +38,11 @@ INMP441Module::~INMP441Module()
  */
 bool INMP441Module::initialize()
 {
-    debug_print("正在初始化 INMP441 模組...");
+    debug.print("正在初始化 INMP441 模組...");
 
     if (current_state != INMP441_UNINITIALIZED)
     {
-        debug_print("模組已經初始化");
+        debug.print("模組已經初始化");
         return true;
     }
     
@@ -80,7 +52,7 @@ bool INMP441Module::initialize()
     
     if (!raw_buffer || !processed_buffer)
     {
-        debug_print("❌ 記憶體分配失敗");
+        debug.print("❌ 記憶體分配失敗");
         update_state(INMP441_ERROR, "記憶體分配失敗");
         deinitialize();
         return false;
@@ -93,7 +65,7 @@ bool INMP441Module::initialize()
     // 安裝 I2S 驅動
     if (!install_i2s_driver())
     {
-        debug_print("❌ I2S 驅動安裝失敗");
+        debug.print("❌ I2S 驅動安裝失敗");
         deinitialize();
         return false;
     }
@@ -101,7 +73,7 @@ bool INMP441Module::initialize()
     // 配置 I2S 引腳
     if (!configure_i2s_pins())
     {
-        debug_print("❌ I2S 引腳配置失敗");
+        debug.print("❌ I2S 引腳配置失敗");
         deinitialize();
         return false;
     }
@@ -110,14 +82,14 @@ bool INMP441Module::initialize()
     esp_err_t ret = i2s_zero_dma_buffer(config.i2s_port);
     if (ret != ESP_OK)
     {
-        debug_printf("⚠️  清除 I2S 緩衝區失敗: %s\n", esp_err_to_name(ret));
+        debug.printf("⚠️  清除 I2S 緩衝區失敗: %s\n", esp_err_to_name(ret));
     }
 
     // 重置統計信息
     reset_statistics();
     
     update_state(INMP441_INITIALIZED, "INMP441 初始化成功");
-    debug_print("✅ INMP441 模組初始化完成");
+    debug.print("✅ INMP441 模組初始化完成");
     return true;
 }
 
@@ -149,7 +121,7 @@ void INMP441Module::deinitialize()
     processed_buffer = nullptr;
     
     update_state(INMP441_UNINITIALIZED, "模組已去初始化");
-    debug_print("INMP441 模組去初始化完成");
+    debug.print("INMP441 模組去初始化完成");
 }
 
 /**
@@ -159,13 +131,13 @@ bool INMP441Module::start()
 {
     if (current_state != INMP441_INITIALIZED)
     {
-        debug_print("❌ 模組尚未初始化，無法開始");
+        debug.print("❌ 模組尚未初始化，無法開始");
         return false;
     }
     
     update_state(INMP441_RUNNING, "開始音訊擷取");
     last_read_time = millis();
-    debug_print("🎤 INMP441 開始擷取音訊");
+    debug.print("🎤 INMP441 開始擷取音訊");
     return true;
 }
 
@@ -177,7 +149,7 @@ void INMP441Module::stop()
     if (current_state == INMP441_RUNNING)
     {
         update_state(INMP441_INITIALIZED, "停止音訊擷取");
-        debug_print("⏹️  INMP441 停止擷取音訊");
+        debug.print("⏹️  INMP441 停止擷取音訊");
     }
 }
 
@@ -305,12 +277,12 @@ bool INMP441Module::set_config(const INMP441Config &new_config)
 {
     if (current_state == INMP441_RUNNING)
     {
-        debug_print("❌ 無法在運行中更改配置");
+        debug.print("❌ 無法在運行中更改配置");
         return false;
     }
     
     config = new_config;
-    debug_print("✅ 配置已更新");
+    debug.print("✅ 配置已更新");
     return true;
 }
 
@@ -354,20 +326,20 @@ void INMP441Module::reset_statistics()
  */
 bool INMP441Module::self_test()
 {
-    debug_print("🧪 開始 INMP441 自我測試...");
+    debug.print("🧪 開始 INMP441 自我測試...");
 
     if (!is_initialized())
     {
         if (!initialize())
         {
-            debug_print("❌ 自我測試失敗: 初始化錯誤");
+            debug.print("❌ 自我測試失敗: 初始化錯誤");
             return false;
         }
     }
     
     if (!start())
     {
-        debug_print("❌ 自我測試失敗: 啟動錯誤");
+        debug.print("❌ 自我測試失敗: 啟動錯誤");
         return false;
     }
     
@@ -377,11 +349,11 @@ bool INMP441Module::self_test()
     
     if (samples_read == 0)
     {
-        debug_print("❌ 自我測試失敗: 無法讀取數據");
+        debug.print("❌ 自我測試失敗: 無法讀取數據");
         return false;
     }
 
-    debug_printf("✅ 自我測試成功 - 讀取了 %zu 個樣本\n", samples_read);
+    debug.printf("✅ 自我測試成功 - 讀取了 %zu 個樣本\n", samples_read);
     return true;
 }
 
@@ -390,18 +362,18 @@ bool INMP441Module::self_test()
  */
 void INMP441Module::print_config() const
 {
-    if (!debug_enabled)
+    if (!debug.is_debug_enabled())
         return;
 
-    debug_print("📋 INMP441 配置信息:");
-    debug_printf("  WS 引腳: GPIO%d\n", config.ws_pin);
-    debug_printf("  SCK 引腳: GPIO%d\n", config.sck_pin);
-    debug_printf("  SD 引腳: GPIO%d\n", config.sd_pin);
-    debug_printf("  I2S 端口: %d\n", config.i2s_port);
-    debug_printf("  採樣率: %lu Hz\n", config.sample_rate);
-    debug_printf("  緩衝區大小: %d 樣本\n", config.buffer_size);
-    debug_printf("  DMA 緩衝區: %d x %d\n", config.dma_buf_count, config.dma_buf_len);
-    debug_printf("  增益係數: %d\n", config.gain_factor);
+    debug.print("📋 INMP441 配置信息:");
+    debug.printf("  WS 引腳: GPIO%d\n", config.ws_pin);
+    debug.printf("  SCK 引腳: GPIO%d\n", config.sck_pin);
+    debug.printf("  SD 引腳: GPIO%d\n", config.sd_pin);
+    debug.printf("  I2S 端口: %d\n", config.i2s_port);
+    debug.printf("  採樣率: %lu Hz\n", config.sample_rate);
+    debug.printf("  緩衝區大小: %d 樣本\n", config.buffer_size);
+    debug.printf("  DMA 緩衝區: %d x %d\n", config.dma_buf_count, config.dma_buf_len);
+    debug.printf("  增益係數: %d\n", config.gain_factor);
 }
 
 /**
@@ -409,18 +381,18 @@ void INMP441Module::print_config() const
  */
 void INMP441Module::print_statistics() const
 {
-    if (!debug_enabled)
+    if (!debug.is_debug_enabled())
         return;
 
     INMP441Stats stats = get_statistics();
 
-    debug_print("📊 INMP441 統計信息:");
-    debug_printf("  狀態: %s\n", get_state_string());
-    debug_printf("  總樣本數: %lu\n", stats.total_samples);
-    debug_printf("  運行時間: %lu ms\n", stats.uptime_ms);
-    debug_printf("  錯誤計數: %zu\n", stats.error_count);
-    debug_printf("  採樣率: %.1f samples/sec\n", stats.samples_per_second);
-    debug_printf("  最後讀取: %lu ms ago\n", millis() - stats.last_read_time);
+    debug.print("📊 INMP441 統計信息:");
+    debug.printf("  狀態: %s\n", get_state_string());
+    debug.printf("  總樣本數: %lu\n", stats.total_samples);
+    debug.printf("  運行時間: %lu ms\n", stats.uptime_ms);
+    debug.printf("  錯誤計數: %zu\n", stats.error_count);
+    debug.printf("  採樣率: %.1f samples/sec\n", stats.samples_per_second);
+    debug.printf("  最後讀取: %lu ms ago\n", millis() - stats.last_read_time);
 }
 
 /**
@@ -445,7 +417,7 @@ bool INMP441Module::install_i2s_driver()
     esp_err_t ret = i2s_driver_install(config.i2s_port, &i2s_config, 0, NULL);
     if (ret != ESP_OK)
     {
-        debug_printf("❌ I2S 驅動安裝失敗: %s\n", esp_err_to_name(ret));
+        debug.printf("❌ I2S 驅動安裝失敗: %s\n", esp_err_to_name(ret));
         return false;
     }
     
@@ -480,7 +452,7 @@ bool INMP441Module::configure_i2s_pins()
     esp_err_t ret = i2s_set_pin(config.i2s_port, &pin_config);
     if (ret != ESP_OK)
     {
-        debug_printf("❌ I2S 引腳配置失敗: %s\n", esp_err_to_name(ret));
+        debug.printf("❌ I2S 引腳配置失敗: %s\n", esp_err_to_name(ret));
         return false;
     }
     
@@ -521,7 +493,7 @@ void INMP441Module::update_state(INMP441State new_state, const char *message)
         
         if (message)
         {
-            debug_printf("🔄 INMP441 狀態變更: %s - %s\n", get_state_string(), message);
+            debug.printf("🔄 INMP441 狀態變更: %s - %s\n", get_state_string(), message);
         }
     }
 }

@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <functional>
 #include "inmp441_module.h"
+#include "debug_print.h"
 
 // 音訊處理配置常數
 #define AUDIO_SAMPLE_RATE 16000  // 16kHz 採樣率
@@ -95,8 +96,8 @@ private:
     bool is_initialized;
     bool is_running;
 
-    // 調試控制
-    bool debug_enabled;
+    // 通用 Debug 模組
+    DebugPrint debug;
 
     // 內部方法
     void normalize_audio(int16_t *input, float *output, size_t length);
@@ -149,12 +150,9 @@ public:
     void clear_speech_buffer();
 
     // 調試控制方法
-    void set_debug(bool enable) { debug_enabled = enable; }
-    bool is_debug_enabled() const { return debug_enabled; }
-
-    // 調試輸出輔助方法
-    void debug_print(const char *message) const;
-    void debug_printf(const char *format, ...) const;
+    void set_debug(bool enable) { debug.set_debug(enable); }
+    bool is_debug_enabled() const { return debug.is_debug_enabled(); }
+    DebugPrint& get_debug() { return debug; }
 
     // 音訊統計信息（調試用）
     struct AudioStats
