@@ -95,6 +95,9 @@ private:
     bool is_initialized;
     bool is_running;
 
+    // 調試控制
+    bool debug_enabled;
+
     // 內部方法
     void normalize_audio(int16_t *input, float *output, size_t length);
     void apply_window_function(float *data, size_t length);
@@ -144,6 +147,14 @@ public:
     // 配置方法
     void reset_vad();
     void clear_speech_buffer();
+
+    // 調試控制方法
+    void set_debug(bool enable) { debug_enabled = enable; }
+    bool is_debug_enabled() const { return debug_enabled; }
+
+    // 調試輸出輔助方法
+    void debug_print(const char *message) const;
+    void debug_printf(const char *format, ...) const;
 
     // 音訊統計信息（調試用）
     struct AudioStats

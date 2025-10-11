@@ -75,7 +75,14 @@ private:
     unsigned long total_samples_read;
     unsigned long last_read_time;
     size_t consecutive_errors;
-    
+
+    // 調試控制
+    bool debug_enabled;
+
+    // 調試輸出輔助方法
+    void debug_print(const char *message) const;
+    void debug_printf(const char *format, ...) const;
+
     // 內部方法
     bool install_i2s_driver();
     void uninstall_i2s_driver();
@@ -134,7 +141,9 @@ public:
     bool self_test();
     void print_config() const;
     void print_statistics() const;
-    
+    void set_debug(bool enable) { debug_enabled = enable; }
+    bool is_debug_enabled() const { return debug_enabled; }
+
     // 靜態工廠方法
     static INMP441Config create_default_config();
     static INMP441Config create_custom_config(uint8_t ws_pin, uint8_t sck_pin, uint8_t sd_pin, 
