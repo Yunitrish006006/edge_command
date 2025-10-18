@@ -25,6 +25,14 @@ pip install numpy
 ### 3. 安裝 Git（用於下載 TensorFlow 倉庫）
 - 從 https://git-scm.com/download/win 下載安裝
 
+### 4. 下載訓練資料集
+
+**Google Speech Commands v0.02** 資料集 (~2GB) 不包含在此倉庫中。
+
+📄 **請參閱 [DATASET_LINK.md](../DATASET_LINK.md)** 取得下載連結和說明。
+
+訓練腳本會嘗試自動下載，或您可以手動下載並解壓到 `dataset/` 資料夾。
+
 ## 🚀 使用方法
 
 ### 快速開始（使用預設英文關鍵字）
