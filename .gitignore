@@ -3,3 +3,27 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+.python/data_speech
+*.wav
+*.YUNROG
+*.gz
+*.ckpt*
+.DS_Store
+
+# Python virtual environment
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# TensorFlow repository (too large)
+tensorflow/
+
+# Dataset (too large, ~2GB)
+dataset/
+
+# Training temporary files
+python/logs/
+python/tmp/
+python/*.log
