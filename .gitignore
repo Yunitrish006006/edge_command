@@ -27,3 +27,4 @@ dataset/
 python/logs/
 python/tmp/
 python/*.log
+train/
