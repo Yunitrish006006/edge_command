@@ -1,0 +1,48 @@
+{
+  "timestamp": "2025-10-17T16:44:11.196147",
+  "training_time": "1.36 hours",
+  "config": {
+    "wanted_words": "on,off,zero,one,two,three,four,five,six,seven,eight,nine,house",
+    "model_architecture": "tiny_conv",
+    "training_steps": "15000,3000",
+    "learning_rate": "0.001,0.0001",
+    "total_steps": 18000
+  },
+  "results": {
+    "final_train_accuracy": 0.85,
+    "final_val_accuracy": 0.83,
+    "final_test_accuracy": 0.82,
+    "overfitting_percentage": 2.0000000000000018
+  },
+  "model_info": {
+    "quantized_size_kb": 18,
+    "float_size_kb": 72,
+    "input_shape": [
+      1,
+      1960
+    ],
+    "output_classes": 15,
+    "labels": [
+      "silence",
+      "unknown",
+      "on",
+      "off",
+      "zero",
+      "one",
+      "two",
+      "three",
+      "four",
+      "five",
+      "six",
+      "seven",
+      "eight",
+      "nine",
+      "house"
+    ]
+  },
+  "deployment": {
+    "target_platform": "ESP32-S3",
+    "estimated_inference_time_ms": 80,
+    "estimated_ram_usage_kb": 30
+  }
+}
